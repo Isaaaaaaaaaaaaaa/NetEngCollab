@@ -53,14 +53,101 @@ def stats():
     )
 
 
+@bp.get("/pending-users")
+@require_roles(["admin"])
+def pending_users():
+    users = User.query.filter_by(is_active=False).order_by(User.created_at.desc()).all()
+    return jsonify(
+        {
+            "items": [
+                {
+                    "id": u.id,
+                    "username": u.username,
+                    "display_name": u.display_name,
+                    "role": u.role,
+                    "created_at": u.created_at.isoformat(),
+                }
+                for u in users
+            ]
+        }
+    )
+
+
+@bp.get("/pending-teacher-posts")
+@require_roles(["admin"])
+def pending_teacher_posts():
+    posts = (
+        TeacherPost.query.filter_by(review_status=ReviewStatus.pending.value)
+        .order_by(TeacherPost.created_at.desc())
+        .all()
+    )
+    items = []
+    for p in posts:
+        teacher = User.query.get(p.teacher_user_id)
+        items.append(
+            {
+                "id": p.id,
+                "post_type": p.post_type,
+                "title": p.title,
+                "content": p.content,
+                "created_at": p.created_at.isoformat(),
+                "teacher": {
+                    "id": teacher.id,
+                    "display_name": teacher.display_name,
+                }
+                if teacher
+                else None,
+            }
+        )
+    return jsonify({"items": items})
+
+
+@bp.get("/pending-resources")
+@require_roles(["admin"])
+def pending_resources():
+    resources = (
+        Resource.query.filter_by(review_status=ReviewStatus.pending.value)
+        .order_by(Resource.created_at.desc())
+        .all()
+    )
+    items = []
+    for r in resources:
+        uploader = User.query.get(r.uploader_user_id)
+        items.append(
+            {
+                "id": r.id,
+                "title": r.title,
+                "resource_type": r.resource_type,
+                "created_at": r.created_at.isoformat(),
+                "uploader": {
+                    "id": uploader.id,
+                    "display_name": uploader.display_name,
+                }
+                if uploader
+                else None,
+            }
+        )
+    return jsonify({"items": items})
+
+
 @bp.get("/users")
 @require_roles(["admin"])
 def list_users():
     role = (request.args.get("role") or "").strip()
+    page = max(int(request.args.get("page", 1)), 1)
+    page_size = int(request.args.get("page_size", 20))
+    if page_size <= 0 or page_size > 100:
+        page_size = 20
     q = User.query
     if role in {"student", "teacher", "admin"}:
         q = q.filter_by(role=role)
-    users = q.order_by(User.created_at.desc()).all()
+    total = q.count()
+    users = (
+        q.order_by(User.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
     return jsonify(
         {
             "items": [
@@ -75,7 +162,10 @@ def list_users():
                     "phone": u.phone,
                 }
                 for u in users
-            ]
+            ],
+            "total": total,
+            "page": page,
+            "page_size": page_size,
         }
     )
 
@@ -144,7 +234,19 @@ def cooperation_overview():
 @bp.get("/projects")
 @require_roles(["admin"])
 def list_projects():
-    posts = TeacherPost.query.order_by(TeacherPost.created_at.desc()).all()
+    page = max(int(request.args.get("page", 1)), 1)
+    page_size = int(request.args.get("page_size", 20))
+    if page_size <= 0 or page_size > 100:
+        page_size = 20
+
+    q = TeacherPost.query
+    total = q.count()
+    posts = (
+        q.order_by(TeacherPost.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
     items = []
     for p in posts:
         teacher = User.query.get(p.teacher_user_id)
@@ -191,4 +293,86 @@ def list_projects():
                 "selected_students": selected_students,
             }
         )
-    return jsonify({"items": items})
+    return jsonify({"items": items, "total": total, "page": page, "page_size": page_size})
+
+
+@bp.post("/projects")
+@require_roles(["admin"])
+def admin_create_project():
+    data = request.get_json(force=True)
+    title = (data.get("title") or "").strip()
+    content = (data.get("content") or "").strip()
+    teacher_user_id = data.get("teacher_user_id")
+    post_type = (data.get("post_type") or "project").strip()
+    if not title or not content or not teacher_user_id:
+        return jsonify({"message": "参数不完整"}), 400
+    teacher = User.query.get(int(teacher_user_id))
+    if not teacher or teacher.role != "teacher":
+        return jsonify({"message": "教师不存在"}), 400
+    from ..utils import ensure_list_str, json_dumps, now_utc
+
+    post = TeacherPost(
+        teacher_user_id=teacher.id,
+        post_type=post_type,
+        title=title,
+        content=content,
+        tech_stack_json=json_dumps(ensure_list_str(data.get("tech_stack"))),
+        tags_json=json_dumps(ensure_list_str(data.get("tags"))),
+        recruit_count=data.get("recruit_count"),
+        duration=(data.get("duration") or None),
+        outcome=(data.get("outcome") or None),
+        contact=(data.get("contact") or None),
+        deadline=None,
+        visibility="public",
+        review_status=ReviewStatus.approved.value,
+        created_at=now_utc(),
+        updated_at=now_utc(),
+    )
+    db.session.add(post)
+    db.session.commit()
+    return jsonify({"id": post.id})
+
+
+@bp.put("/projects/<int:post_id>")
+@require_roles(["admin"])
+def admin_update_project(post_id: int):
+    data = request.get_json(force=True)
+    post = TeacherPost.query.get(post_id)
+    if not post:
+        return jsonify({"message": "不存在"}), 404
+    title = (data.get("title") or post.title or "").strip()
+    content = (data.get("content") or post.content or "").strip()
+    if not title or not content:
+        return jsonify({"message": "标题/内容不能为空"}), 400
+    from ..utils import ensure_list_str, json_dumps, now_utc
+
+    post.title = title
+    post.content = content
+    if "post_type" in data and (data.get("post_type") or "").strip():
+        post.post_type = (data.get("post_type") or post.post_type).strip()
+    if "tech_stack" in data:
+        post.tech_stack_json = json_dumps(ensure_list_str(data.get("tech_stack")))
+    if "tags" in data:
+        post.tags_json = json_dumps(ensure_list_str(data.get("tags")))
+    if "recruit_count" in data:
+        post.recruit_count = data.get("recruit_count")
+    if "duration" in data:
+        post.duration = (data.get("duration") or None)
+    if "outcome" in data:
+        post.outcome = (data.get("outcome") or None)
+    if "contact" in data:
+        post.contact = (data.get("contact") or None)
+    post.updated_at = now_utc()
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@bp.delete("/projects/<int:post_id>")
+@require_roles(["admin"])
+def admin_delete_project(post_id: int):
+    post = TeacherPost.query.get(post_id)
+    if not post:
+        return jsonify({"message": "不存在"}), 404
+    db.session.delete(post)
+    db.session.commit()
+    return jsonify({"ok": True})

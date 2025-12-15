@@ -42,6 +42,17 @@
             </ul>
           </el-scrollbar>
         </el-card>
+        <div style="margin-top:8px; text-align:center;">
+          <el-pagination
+            v-if="total > pageSize"
+            background
+            layout="prev, pager, next"
+            :current-page="page"
+            :page-size="pageSize"
+            :total="total"
+            @current-change="handlePageChange"
+          />
+        </div>
       </el-col>
 
       <el-col :xs="24" :lg="16">
@@ -116,6 +127,9 @@ import axios from "axios";
 
 
 const users = ref<any[]>([]);
+const total = ref(0);
+const page = ref(1);
+const pageSize = ref(20);
 const roleFilter = ref<string>("");
 const selectedId = ref<number | null>(null);
 const createVisible = ref(false);
@@ -127,13 +141,22 @@ const current = ref<any | null>(null);
 
 async function load() {
   const resp = await axios.get("/api/admin/users", {
-    params: { role: roleFilter.value || undefined }
+    params: { role: roleFilter.value || undefined, page: page.value, page_size: pageSize.value }
   });
   users.value = resp.data.items;
+  total.value = resp.data.total || 0;
   if (users.value.length && !selectedId.value) {
     selectedId.value = users.value[0].id;
     current.value = users.value[0];
   }
+}
+
+
+function handlePageChange(p: number) {
+  page.value = p;
+  selectedId.value = null;
+  current.value = null;
+  load();
 }
 
 
