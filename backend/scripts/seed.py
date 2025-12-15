@@ -22,6 +22,7 @@ from app.utils import hash_password, json_dumps, now_utc
 def run():
     app = create_app()
     with app.app_context():
+        db.drop_all()
         db.create_all()
 
         def ensure_user(username: str, role: str, password: str, display_name: str, is_active: bool):
@@ -129,7 +130,7 @@ def run():
                 post_id=p2.id,
                 initiated_by=Role.student.value,
                 teacher_status=CooperationStatus.pending.value,
-                student_status=CooperationStatus.accepted.value,
+                student_status=CooperationStatus.pending.value,
                 final_status=CooperationStatus.pending.value,
                 created_at=now_utc(),
                 updated_at=now_utc(),

@@ -64,8 +64,6 @@ def create_request():
     student_status = CooperationStatus.pending.value
     if initiated_by == Role.teacher.value:
         teacher_status = CooperationStatus.accepted.value
-    elif initiated_by == Role.student.value:
-        student_status = CooperationStatus.accepted.value
 
     req = CooperationRequest(
         teacher_user_id=teacher_user_id,

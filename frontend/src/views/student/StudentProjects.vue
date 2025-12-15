@@ -181,10 +181,9 @@ async function loadMyRequests() {
 function statusLabel(r: any) {
   if (r.final_status === "confirmed") return "已确认";
   if (r.final_status === "rejected") return "已拒绝";
-  if (r.teacher_status === "accepted" && r.student_status === "accepted") return "待确认";
-  if (r.teacher_status === "accepted") return "老师已接受";
-  if (r.student_status === "accepted") return "我已接受";
-  return "待处理";
+  if (r.teacher_status === "accepted" && r.student_status === "pending") return "待我确认";
+  if (r.teacher_status === "pending" && r.student_status === "accepted") return "待教师确认";
+  return "待审核";
 }
 
 
