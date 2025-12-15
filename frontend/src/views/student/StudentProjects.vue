@@ -6,6 +6,11 @@
         <p class="page-subtitle">按兴趣和技能筛选项目，并一键发起合作申请</p>
       </div>
       <el-space :size="8">
+        <el-radio-group v-model="reactFilter" size="small">
+          <el-radio-button label="all">全部</el-radio-button>
+          <el-radio-button label="liked">我点赞的</el-radio-button>
+          <el-radio-button label="favorited">我收藏的</el-radio-button>
+        </el-radio-group>
         <el-input
           v-model="filters.keyword"
           size="small"
@@ -69,9 +74,18 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="教师" width="100" align="center">
+            <el-table-column label="教师" width="120" align="center">
               <template #default="scope">
-                <span style="font-size: 12px;">{{ scope.row.teacher?.display_name || "-" }}</span>
+                <el-link
+                  v-if="scope.row.teacher"
+                  type="primary"
+                  :underline="false"
+                  style="font-size:12px;"
+                  @click.stop="chat(scope.row)"
+                >
+                  {{ scope.row.teacher.display_name }}
+                </el-link>
+                <span v-else style="font-size: 12px;">-</span>
               </template>
             </el-table-column>
             <el-table-column label="我的状态" width="110" align="center">
@@ -87,7 +101,16 @@
                 <span v-else style="font-size: 11px; color: var(--app-muted);">未申请</span>
               </template>
             </el-table-column>
-            <el-table-column label="操作" min-width="140" align="right" fixed="right">
+            <el-table-column label="互动" width="220" align="right">
+              <template #default="scope">
+                <InteractionsPanel
+                  :target-type="'teacher_post'"
+                  :target-id="scope.row.id"
+                  @changed="handleInteractionChanged"
+                />
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" min-width="120" align="right" fixed="right">
               <template #default="scope">
                 <el-button
                   size="small"
@@ -98,10 +121,19 @@
                 >
                   申请加入
                 </el-button>
-                <el-button size="small" text @click="favorite(scope.row)">收藏</el-button>
               </template>
             </el-table-column>
           </el-table>
+          <div v-if="total > pageSize" style="margin-top:8px; text-align:right;">
+            <el-pagination
+              background
+              layout="prev, pager, next"
+              :current-page="page"
+              :page-size="pageSize"
+              :total="total"
+              @current-change="handlePageChange"
+            />
+          </div>
         </el-card>
       </el-col>
 
@@ -132,14 +164,21 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { onMounted, reactive, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import axios from "axios";
+import InteractionsPanel from "../../components/InteractionsPanel.vue";
 
 
 const posts = ref<any[]>([]);
 const matched = ref<any[]>([]);
 const filters = reactive({ keyword: "" });
 const requestStatus = reactive<Record<number, any>>({});
+const router = useRouter();
+const reactFilter = ref<"all" | "liked" | "favorited">("all");
+const page = ref(1);
+const pageSize = ref(10);
+const total = ref(0);
 
 
 function typeLabel(t: string) {
@@ -150,8 +189,17 @@ function typeLabel(t: string) {
 
 
 async function loadPosts() {
-  const resp = await axios.get("/api/teacher-posts", { params: { keyword: filters.keyword || undefined } });
+  const resp = await axios.get("/api/teacher-posts", {
+    params: {
+      keyword: filters.keyword || undefined,
+      like_only: reactFilter.value === "liked" ? 1 : undefined,
+      favorite_only: reactFilter.value === "favorited" ? 1 : undefined,
+      page: page.value,
+      page_size: pageSize.value
+    }
+  });
   posts.value = resp.data.items;
+  total.value = resp.data.total || 0;
 }
 
 
@@ -206,12 +254,29 @@ async function apply(p: any) {
 }
 
 
-async function favorite(p: any) {
-  await axios.post("/api/reactions/toggle", {
-    target_type: "teacher_post",
-    target_id: p.id,
-    reaction_type: "favorite"
+function handlePageChange(p: number) {
+  page.value = p;
+  loadPosts();
+}
+
+
+function handleInteractionChanged() {
+  if (reactFilter.value !== "all") {
+    loadPosts();
+  }
+}
+
+
+async function chat(p: any) {
+  if (!p.teacher || !p.teacher.id) return;
+  const meResp = await axios.get("/api/auth/me");
+  const me = meResp.data;
+  await axios.post("/api/messages/send", {
+    teacher_user_id: p.teacher.id,
+    student_user_id: me.id,
+    content: `老师您好，我对您的项目“${p.title}”很感兴趣，想进一步了解。`
   });
+  router.push({ name: "student-messages" });
 }
 
 
@@ -219,5 +284,11 @@ onMounted(() => {
   loadPosts();
   loadMatch();
   loadMyRequests();
+});
+
+
+watch(reactFilter, () => {
+  page.value = 1;
+  loadPosts();
 });
 </script>

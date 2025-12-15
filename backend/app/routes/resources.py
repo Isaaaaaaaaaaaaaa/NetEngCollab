@@ -4,7 +4,7 @@ from flask import Blueprint, jsonify, request, send_file
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from ..extensions import db
-from ..models import File, Resource, ReviewStatus, Role, User
+from ..models import File, Reaction, Resource, ReviewStatus, Role, User
 from ..utils import ensure_list_str, json_dumps, json_loads, new_storage_name, now_utc, storage_path
 
 
@@ -89,12 +89,51 @@ def list_resources():
     q = Resource.query.filter_by(review_status=ReviewStatus.approved.value)
     category = (request.args.get("category") or "").strip()
     keyword = (request.args.get("keyword") or "").strip()
+    like_only = (request.args.get("like_only") or "").strip() in {"1", "true", "yes"}
+    favorite_only = (request.args.get("favorite_only") or "").strip() in {"1", "true", "yes"}
+    page = max(int(request.args.get("page", 1)), 1)
+    page_size = int(request.args.get("page_size", 20))
+    if page_size <= 0 or page_size > 100:
+        page_size = 20
     if category:
         q = q.filter_by(category=category)
     if keyword:
         q = q.filter(Resource.title.contains(keyword) | Resource.description.contains(keyword))
+
+    if like_only or favorite_only:
+        if not request.headers.get("Authorization"):
+            return jsonify({"message": "未登录"}), 401
+        try:
+            from flask_jwt_extended import verify_jwt_in_request
+
+            verify_jwt_in_request(optional=True)
+            viewer_id = int(get_jwt_identity()) if get_jwt_identity() else None
+        except Exception:
+            viewer_id = None
+        if not viewer_id:
+            return jsonify({"message": "未登录"}), 401
+
+        reaction_type = "like" if like_only else "favorite"
+        ids = [
+            r.target_id
+            for r in Reaction.query.filter_by(
+                user_id=viewer_id,
+                target_type="resource",
+                reaction_type=reaction_type,
+            ).all()
+        ]
+        if not ids:
+            return jsonify({"items": [], "total": 0, "page": page, "page_size": page_size})
+        q = q.filter(Resource.id.in_(ids))
+
+    total = q.count()
     items = []
-    for r in q.order_by(Resource.created_at.desc()).limit(200).all():
+    for r in (
+        q.order_by(Resource.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    ):
         u = User.query.get(r.uploader_user_id)
         file_record = File.query.get(r.file_id)
         items.append(
@@ -116,4 +155,4 @@ def list_resources():
                 "created_at": r.created_at.isoformat(),
             }
         )
-    return jsonify({"items": items})
+    return jsonify({"items": items, "total": total, "page": page, "page_size": page_size})

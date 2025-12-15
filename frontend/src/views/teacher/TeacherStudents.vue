@@ -26,7 +26,7 @@
           <el-empty v-if="!students.length" description="暂无学生记录" />
           <el-table
             v-else
-            :data="students"
+            :data="pagedStudents"
             size="small"
             border
             @row-click="select"
@@ -55,7 +55,25 @@
                 <span v-else style="font-size:12px; color:var(--app-muted);">未填写</span>
               </template>
             </el-table-column>
+            <el-table-column label="推荐度" width="110" align="center">
+              <template #default="scope">
+                <span v-if="recommendScores[scope.row.user.id]" class="pill badge-green" style="font-size:11px;">
+                  匹配 {{ Math.round(recommendScores[scope.row.user.id] * 100) }}%
+                </span>
+                <span v-else style="font-size:11px; color:var(--app-muted);">无</span>
+              </template>
+            </el-table-column>
           </el-table>
+          <div v-if="totalStudents > pageSize" style="margin-top:8px; text-align:right;">
+            <el-pagination
+              background
+              layout="prev, pager, next"
+              :current-page="page"
+              :page-size="pageSize"
+              :total="totalStudents"
+              @current-change="handlePageChange"
+            />
+          </div>
         </el-card>
       </el-col>
 
@@ -127,19 +145,23 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import axios from "axios";
 
 
 const students = ref<any[]>([]);
 const filters = reactive({ keyword: "" });
+const page = ref(1);
+const pageSize = ref(10);
 const selectedStudent = ref<any | null>(null);
 const myPosts = ref<any[]>([]);
 const selectedPostId = ref<number | null>(null);
 const currentRequest = ref<any | null>(null);
+const recommendScores = reactive<Record<number, number>>({});
 
 
 async function load() {
+  page.value = 1;
   const resp = await axios.get("/api/students", {
     params: { keyword: filters.keyword || undefined }
   });
@@ -154,6 +176,40 @@ async function load() {
     selectedPostId.value = myPosts.value[0].id;
   }
   await loadCurrentRequest();
+
+  const matchResp = await axios.get("/api/match/top", { params: { limit: 50 } });
+  Object.keys(recommendScores).forEach(k => delete recommendScores[Number(k)]);
+  if (matchResp.data.kind === "students") {
+    (matchResp.data.items || []).forEach((r: any) => {
+      if (r.user_id) {
+        recommendScores[r.user_id] = r.score || 0;
+      }
+    });
+  }
+}
+
+
+const sortedStudents = computed(() => {
+  return [...students.value].sort((a, b) => {
+    const sa = recommendScores[a.user.id] || 0;
+    const sb = recommendScores[b.user.id] || 0;
+    if (sb !== sa) return sb - sa;
+    return (b.weekly_hours || 0) - (a.weekly_hours || 0);
+  });
+});
+
+
+const totalStudents = computed(() => sortedStudents.value.length);
+
+
+const pagedStudents = computed(() => {
+  const start = (page.value - 1) * pageSize.value;
+  return sortedStudents.value.slice(start, start + pageSize.value);
+});
+
+
+function handlePageChange(p: number) {
+  page.value = p;
 }
 
 

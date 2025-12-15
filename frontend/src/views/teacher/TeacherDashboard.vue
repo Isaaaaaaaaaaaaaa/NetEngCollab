@@ -20,16 +20,9 @@
       </el-col>
       <el-col :xs="24" :sm="6">
         <el-card class="app-card" shadow="never" body-style="padding: 14px 16px;">
-          <div class="page-subtitle" style="margin-bottom: 4px;">进行中合作</div>
+          <div class="page-subtitle" style="margin-bottom: 4px;">合作项目</div>
           <div style="font-size: 22px; font-weight: 600;">{{ projects.length }}</div>
-          <div style="font-size: 11px; color: var(--app-muted); margin-top: 4px;">当前已确认合作的项目数</div>
-        </el-card>
-      </el-col>
-      <el-col :xs="24" :sm="6">
-        <el-card class="app-card" shadow="never" body-style="padding: 14px 16px;">
-          <div class="page-subtitle" style="margin-bottom: 4px;">推荐学生</div>
-          <div style="font-size: 22px; font-weight: 600;">{{ recommended.length }}</div>
-          <div style="font-size: 11px; color: var(--app-muted); margin-top: 4px;">系统根据项目画像给出的候选学生</div>
+          <div style="font-size: 11px; color: var(--app-muted); margin-top: 4px;">已确认合作的项目数</div>
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="6">
@@ -72,31 +65,7 @@
             </el-timeline>
           </el-card>
 
-          <el-card class="app-card" shadow="never">
-            <template #header>
-              <div class="page-subtitle">当前合作项目</div>
-            </template>
-            <el-empty v-if="!projects.length" description="暂无合作项目" />
-            <el-table
-              v-else
-              :data="projects"
-              size="small"
-              border
-              style="width: 100%;"
-              :show-header="false"
-            >
-              <el-table-column prop="title" min-width="220">
-                <template #default="scope">
-                  <span style="font-size: 13px;" class="truncate">{{ scope.row.title }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column width="90" align="right">
-                <template #default>
-                  <span class="pill badge-amber">进行中</span>
-                </template>
-              </el-table-column>
-            </el-table>
-          </el-card>
+          <!-- 当前合作模块已移除（合作管理请进入“合作项目进度管理”页面） -->
         </div>
       </el-col>
 
@@ -126,31 +95,7 @@
             </el-scrollbar>
           </el-card>
 
-          <el-card class="app-card" shadow="never">
-            <template #header>
-              <div class="page-subtitle">推荐学生 TOP10</div>
-            </template>
-            <el-empty v-if="!recommended.length" description="暂无匹配结果" />
-            <el-table
-              v-else
-              :data="recommended"
-              size="small"
-              border
-              style="width: 100%;"
-              :show-header="false"
-            >
-              <el-table-column min-width="140">
-                <template #default="scope">
-                  <span style="font-size: 12px;">学生 {{ scope.row.user_id }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column width="110" align="right">
-                <template #default="scope">
-                  <span class="pill badge-green">匹配度 {{ Math.round(scope.row.score * 100) }}%</span>
-                </template>
-              </el-table-column>
-            </el-table>
-          </el-card>
+          <!-- 推荐学生列表已移至学生画像与匹配页面的排序功能中 -->
         </div>
       </el-col>
     </el-row>
@@ -164,7 +109,6 @@ import axios from "axios";
 
 const posts = ref<any[]>([]);
 const projects = ref<any[]>([]);
-const recommended = ref<any[]>([]);
 const requests = ref<any[]>([]);
 
 
@@ -181,12 +125,6 @@ async function loadProjects() {
 }
 
 
-async function loadMatch() {
-  const resp = await axios.get("/api/match/top");
-  if (resp.data.kind === "students") {
-    recommended.value = resp.data.items;
-  }
-}
 
 
 async function loadRequests() {
@@ -212,7 +150,6 @@ async function reject(r: any) {
 onMounted(() => {
   loadPosts();
   loadProjects();
-  loadMatch();
   loadRequests();
 });
 </script>

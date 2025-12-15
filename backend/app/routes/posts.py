@@ -3,6 +3,7 @@ from datetime import datetime
 
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
+from sqlalchemy import func
 
 from ..extensions import db
 from ..models import (
@@ -49,6 +50,13 @@ def list_teacher_posts():
     viewer_role = _viewer_role()
     q = TeacherPost.query
 
+    like_only = (request.args.get("like_only") or "").strip() in {"1", "true", "yes"}
+    favorite_only = (request.args.get("favorite_only") or "").strip() in {"1", "true", "yes"}
+    page = max(int(request.args.get("page", 1)), 1)
+    page_size = int(request.args.get("page_size", 20))
+    if page_size <= 0 or page_size > 100:
+        page_size = 20
+
     post_type = request.args.get("post_type")
     keyword = (request.args.get("keyword") or "").strip()
     tag = (request.args.get("tag") or "").strip()
@@ -58,7 +66,34 @@ def list_teacher_posts():
         q = q.filter_by(post_type=post_type)
     if keyword:
         q = q.filter(TeacherPost.title.contains(keyword) | TeacherPost.content.contains(keyword))
-    posts = q.order_by(TeacherPost.created_at.desc()).limit(200).all()
+
+    if like_only or favorite_only:
+        if not request.headers.get("Authorization"):
+            return jsonify({"message": "未登录"}), 401
+        try:
+            from flask_jwt_extended import verify_jwt_in_request
+
+            verify_jwt_in_request(optional=True)
+            viewer_id = int(get_jwt_identity()) if get_jwt_identity() else None
+        except Exception:
+            viewer_id = None
+        if not viewer_id:
+            return jsonify({"message": "未登录"}), 401
+
+        reaction_type = "like" if like_only else "favorite"
+        ids = [
+            r.target_id
+            for r in Reaction.query.filter_by(
+                user_id=viewer_id,
+                target_type="teacher_post",
+                reaction_type=reaction_type,
+            ).all()
+        ]
+        if not ids:
+            return jsonify({"items": [], "total": 0, "page": page, "page_size": page_size})
+        q = q.filter(TeacherPost.id.in_(ids))
+
+    posts = q.order_by(TeacherPost.created_at.desc()).limit(2000).all()
 
     items = []
     for p in posts:
@@ -94,9 +129,14 @@ def list_teacher_posts():
                 if teacher
                 else None,
                 "created_at": p.created_at.isoformat(),
+                "updated_at": p.updated_at.isoformat(),
             }
         )
-    return jsonify({"items": items})
+
+    total = len(items)
+    start = (page - 1) * page_size
+    end = start + page_size
+    return jsonify({"items": items[start:end], "total": total, "page": page, "page_size": page_size})
 
 
 @bp.post("/teacher-posts")
@@ -292,13 +332,21 @@ def add_comment():
     target_type = (data.get("target_type") or "").strip()
     target_id = data.get("target_id")
     content = (data.get("content") or "").strip()
+    parent_comment_id = data.get("parent_comment_id")
     if not target_type or not target_id or not content:
         return jsonify({"message": "参数不完整"}), 400
+
+    parent_id = int(parent_comment_id) if parent_comment_id else None
+    if parent_id:
+        parent = Comment.query.get(parent_id)
+        if not parent or parent.target_type != target_type or parent.target_id != int(target_id):
+            return jsonify({"message": "父评论不存在"}), 400
 
     c = Comment(
         author_user_id=user.id,
         target_type=target_type,
         target_id=int(target_id),
+        parent_comment_id=parent_id,
         content=content,
         created_at=now_utc(),
     )
@@ -311,11 +359,19 @@ def add_comment():
 def list_comments():
     target_type = (request.args.get("target_type") or "").strip()
     target_id = request.args.get("target_id")
+    page = max(int(request.args.get("page", 1)), 1)
+    page_size = int(request.args.get("page_size", 20))
+    if page_size <= 0 or page_size > 100:
+        page_size = 20
     if not target_type or not target_id:
         return jsonify({"message": "参数不完整"}), 400
+
+    q = Comment.query.filter_by(target_type=target_type, target_id=int(target_id))
+    total = q.count()
     comments = (
-        Comment.query.filter_by(target_type=target_type, target_id=int(target_id))
-        .order_by(Comment.created_at.asc())
+        q.order_by(Comment.created_at.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )
     items = []
@@ -325,11 +381,165 @@ def list_comments():
             {
                 "id": c.id,
                 "author": {"id": u.id, "display_name": u.display_name} if u else None,
+                "parent_comment_id": c.parent_comment_id,
                 "content": c.content,
                 "created_at": c.created_at.isoformat(),
             }
         )
-    return jsonify({"items": items})
+    return jsonify({"items": items, "total": total, "page": page, "page_size": page_size})
+
+
+@bp.get("/interactions/summary")
+def interactions_summary():
+    target_type = (request.args.get("target_type") or "").strip()
+    target_id = request.args.get("target_id")
+    if not target_type or not target_id:
+        return jsonify({"message": "参数不完整"}), 400
+
+    viewer_id = None
+    if request.headers.get("Authorization"):
+        try:
+            from flask_jwt_extended import verify_jwt_in_request
+
+            verify_jwt_in_request(optional=True)
+            viewer_id = int(get_jwt_identity()) if get_jwt_identity() else None
+        except Exception:
+            viewer_id = None
+
+    tid = int(target_id)
+    likes = (
+        db.session.query(func.count(Reaction.id))
+        .filter_by(target_type=target_type, target_id=tid, reaction_type="like")
+        .scalar()
+        or 0
+    )
+    favorites = (
+        db.session.query(func.count(Reaction.id))
+        .filter_by(target_type=target_type, target_id=tid, reaction_type="favorite")
+        .scalar()
+        or 0
+    )
+    comments = (
+        db.session.query(func.count(Comment.id))
+        .filter_by(target_type=target_type, target_id=tid)
+        .scalar()
+        or 0
+    )
+
+    liked = False
+    favorited = False
+    if viewer_id:
+        liked = (
+            Reaction.query.filter_by(
+                user_id=viewer_id,
+                target_type=target_type,
+                target_id=tid,
+                reaction_type="like",
+            ).first()
+            is not None
+        )
+        favorited = (
+            Reaction.query.filter_by(
+                user_id=viewer_id,
+                target_type=target_type,
+                target_id=tid,
+                reaction_type="favorite",
+            ).first()
+            is not None
+        )
+    return jsonify(
+        {
+            "target_type": target_type,
+            "target_id": tid,
+            "likes": likes,
+            "favorites": favorites,
+            "comments": comments,
+            "liked": liked,
+            "favorited": favorited,
+        }
+    )
+
+
+@bp.post("/interactions/batch-summary")
+@jwt_required(optional=True)
+def interactions_batch_summary():
+    data = request.get_json(force=True)
+    target_type = (data.get("target_type") or "").strip()
+    target_ids = data.get("target_ids") or []
+    if not target_type or not isinstance(target_ids, list) or not target_ids:
+        return jsonify({"message": "参数不完整"}), 400
+
+    ids = [int(x) for x in target_ids if str(x).isdigit()]
+    if not ids:
+        return jsonify({"message": "参数不完整"}), 400
+
+    viewer_id = None
+    if get_jwt_identity():
+        viewer_id = int(get_jwt_identity())
+
+    like_rows = (
+        db.session.query(Reaction.target_id, func.count(Reaction.id))
+        .filter(
+            Reaction.target_type == target_type,
+            Reaction.reaction_type == "like",
+            Reaction.target_id.in_(ids),
+        )
+        .group_by(Reaction.target_id)
+        .all()
+    )
+    fav_rows = (
+        db.session.query(Reaction.target_id, func.count(Reaction.id))
+        .filter(
+            Reaction.target_type == target_type,
+            Reaction.reaction_type == "favorite",
+            Reaction.target_id.in_(ids),
+        )
+        .group_by(Reaction.target_id)
+        .all()
+    )
+    comment_rows = (
+        db.session.query(Comment.target_id, func.count(Comment.id))
+        .filter(Comment.target_type == target_type, Comment.target_id.in_(ids))
+        .group_by(Comment.target_id)
+        .all()
+    )
+
+    likes_map = {int(tid): int(cnt) for tid, cnt in like_rows}
+    fav_map = {int(tid): int(cnt) for tid, cnt in fav_rows}
+    com_map = {int(tid): int(cnt) for tid, cnt in comment_rows}
+
+    liked_set = set()
+    favorited_set = set()
+    if viewer_id:
+        liked_set = {
+            int(r.target_id)
+            for r in Reaction.query.filter(
+                Reaction.user_id == viewer_id,
+                Reaction.target_type == target_type,
+                Reaction.reaction_type == "like",
+                Reaction.target_id.in_(ids),
+            ).all()
+        }
+        favorited_set = {
+            int(r.target_id)
+            for r in Reaction.query.filter(
+                Reaction.user_id == viewer_id,
+                Reaction.target_type == target_type,
+                Reaction.reaction_type == "favorite",
+                Reaction.target_id.in_(ids),
+            ).all()
+        }
+
+    result = {}
+    for tid in ids:
+        result[str(tid)] = {
+            "likes": likes_map.get(tid, 0),
+            "favorites": fav_map.get(tid, 0),
+            "comments": com_map.get(tid, 0),
+            "liked": tid in liked_set,
+            "favorited": tid in favorited_set,
+        }
+    return jsonify({"target_type": target_type, "items": result})
 
 
 @bp.post("/reactions/toggle")
@@ -366,3 +576,22 @@ def toggle_reaction():
     db.session.add(r)
     db.session.commit()
     return jsonify({"active": True})
+
+
+@bp.get("/reactions")
+@jwt_required()
+def list_reactions():
+    user = User.query.get(int(get_jwt_identity()))
+    if not user or not user.is_active:
+        return jsonify({"message": "未登录"}), 401
+    target_type = (request.args.get("target_type") or "").strip()
+    reaction_type = (request.args.get("reaction_type") or "").strip()
+    if not target_type or reaction_type not in {"like", "favorite"}:
+        return jsonify({"message": "参数不完整"}), 400
+
+    rows = Reaction.query.filter_by(
+        user_id=user.id,
+        target_type=target_type,
+        reaction_type=reaction_type,
+    ).order_by(Reaction.created_at.desc()).all()
+    return jsonify({"items": [{"target_id": r.target_id} for r in rows]})

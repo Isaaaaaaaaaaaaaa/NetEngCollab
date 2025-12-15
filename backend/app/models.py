@@ -115,6 +115,7 @@ class Comment(db.Model):
     author_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
     target_type = db.Column(db.String(32), nullable=False, index=True)
     target_id = db.Column(db.Integer, nullable=False, index=True)
+    parent_comment_id = db.Column(db.Integer, db.ForeignKey("comments.id"), nullable=True, index=True)
     content = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 

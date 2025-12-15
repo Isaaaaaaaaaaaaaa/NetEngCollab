@@ -6,6 +6,11 @@
         <p class="page-subtitle">快速寻找缺前端 / 算法 / 后端等角色的队伍</p>
       </div>
       <el-space :size="8">
+        <el-radio-group v-model="reactFilter" size="small">
+          <el-radio-button label="all">全部</el-radio-button>
+          <el-radio-button label="liked">我点赞的</el-radio-button>
+          <el-radio-button label="favorited">我收藏的</el-radio-button>
+        </el-radio-group>
         <el-input
           v-model="filters.keyword"
           size="small"
@@ -41,9 +46,22 @@
                 <div style="display:flex; flex-wrap:wrap; gap:4px;">
                   <span v-for="r in p.needed_roles" :key="r" class="tag">{{ r }}</span>
                 </div>
+                <div style="margin-top:4px;">
+                  <InteractionsPanel :target-type="'teamup_post'" :target-id="p.id" />
+                </div>
               </li>
             </ul>
           </el-scrollbar>
+          <div v-if="total > pageSize" style="margin-top:8px; text-align:right;">
+            <el-pagination
+              background
+              layout="prev, pager, next"
+              :current-page="page"
+              :page-size="pageSize"
+              :total="total"
+              @current-change="handlePageChange"
+            />
+          </div>
         </el-card>
       </el-col>
 
@@ -85,12 +103,17 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { onMounted, reactive, ref, watch } from "vue";
 import axios from "axios";
+import InteractionsPanel from "../../components/InteractionsPanel.vue";
 
 
 const items = ref<any[]>([]);
 const filters = reactive({ keyword: "" });
+const reactFilter = ref<"all" | "liked" | "favorited">("all");
+const page = ref(1);
+const pageSize = ref(10);
+const total = ref(0);
 const form = reactive({
   post_kind: "竞赛组队",
   title: "",
@@ -101,9 +124,16 @@ const form = reactive({
 
 async function load() {
   const resp = await axios.get("/api/teamup", {
-    params: { keyword: filters.keyword || undefined }
+    params: {
+      keyword: filters.keyword || undefined,
+      like_only: reactFilter.value === "liked" ? 1 : undefined,
+      favorite_only: reactFilter.value === "favorited" ? 1 : undefined,
+      page: page.value,
+      page_size: pageSize.value
+    }
   });
   items.value = resp.data.items;
+  total.value = resp.data.total || 0;
 }
 
 
@@ -123,6 +153,18 @@ async function publish() {
   form.needed_roles = "";
   await load();
 }
+
+
+function handlePageChange(p: number) {
+  page.value = p;
+  load();
+}
+
+
+watch(reactFilter, () => {
+  page.value = 1;
+  load();
+});
 
 
 onMounted(() => {

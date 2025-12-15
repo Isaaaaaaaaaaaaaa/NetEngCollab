@@ -12,6 +12,11 @@
           <el-radio-button label="resources">资源库</el-radio-button>
           <el-radio-button label="achievements">成果展示</el-radio-button>
         </el-radio-group>
+        <el-radio-group v-model="reactFilter" size="small">
+          <el-radio-button label="all">全部</el-radio-button>
+          <el-radio-button label="liked">我点赞的</el-radio-button>
+          <el-radio-button label="favorited">我收藏的</el-radio-button>
+        </el-radio-group>
         <el-space :size="8">
           <el-input
             v-model="filters.keyword"
@@ -35,54 +40,50 @@
             v-if="!items.length"
             :description="mode === 'resources' ? '暂无资源记录' : '暂无成果记录'"
           />
-          <el-table
-            v-else
-            :data="items"
-            size="small"
-            border
-          >
-            <el-table-column label="标题" min-width="200">
-              <template #default="scope">
-                <div style="display:flex; flex-direction:column; gap:2px;">
-                  <span class="truncate" style="font-size:13px; font-weight:500;">{{ scope.row.title }}</span>
-                  <span class="truncate" style="font-size:11px; color:var(--app-muted);">{{ scope.row.description || "无描述" }}</span>
+          <el-scrollbar v-else style="max-height: 420px;">
+            <ul style="list-style:none; padding:0; margin:0; font-size:12px; color:var(--app-text);">
+              <li
+                v-for="r in items"
+                :key="r.id"
+                style="padding:10px 0; border-bottom:1px solid rgba(148,163,184,0.25);"
+              >
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px;">
+                  <div style="display:flex; flex-direction:column; gap:2px; min-width:0;">
+                    <span class="truncate" style="font-size:13px; font-weight:600; max-width:420px;">{{ r.title }}</span>
+                    <span class="truncate" style="font-size:11px; color:var(--app-muted); max-width:420px;">{{ r.description || "无描述" }}</span>
+                  </div>
+                  <span class="pill badge-blue" style="font-size:10px;">{{ r.resource_type }}</span>
                 </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="类型" width="90" align="center">
-              <template #default="scope">
-                <span class="pill badge-blue">{{ scope.row.resource_type }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="标签" min-width="140">
-              <template #default="scope">
-                <div style="display:flex; flex-wrap:wrap; gap:4px;">
-                  <span v-for="t in scope.row.tags" :key="t" class="tag">{{ t }}</span>
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                  <div style="display:flex; flex-wrap:wrap; gap:4px;">
+                    <span v-for="t in r.tags" :key="t" class="tag">{{ t }}</span>
+                  </div>
+                  <div style="display:flex; gap:8px; align-items:center; font-size:11px; color:var(--app-muted);">
+                    <span>{{ r.uploader?.display_name || "未知" }}</span>
+                    <span>{{ r.created_at?.slice(0, 10) }}</span>
+                    <el-button size="small" text type="primary" @click="download(r)">下载</el-button>
+                  </div>
                 </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="上传者" width="110" align="center">
-              <template #default="scope">
-                <span style="font-size:12px;">{{ scope.row.uploader?.display_name || "未知" }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="120" align="right">
-              <template #default="scope">
-                <el-space :size="4">
-                  <el-button size="small" text type="primary" @click="download(scope.row)">下载</el-button>
-                  <el-button
-                    v-if="mode === 'achievements'"
-                    size="small"
-                    text
-                    type="primary"
-                    @click="like(scope.row)"
-                  >
-                    点赞
-                  </el-button>
-                </el-space>
-              </template>
-            </el-table-column>
-          </el-table>
+                <div style="margin-top:6px;">
+                  <InteractionsPanel
+                    :target-type="'resource'"
+                    :target-id="r.id"
+                    @changed="handleInteractionChanged"
+                  />
+                </div>
+              </li>
+            </ul>
+          </el-scrollbar>
+          <div v-if="total > pageSize" style="margin-top:8px; text-align:right;">
+            <el-pagination
+              background
+              layout="prev, pager, next"
+              :current-page="page"
+              :page-size="pageSize"
+              :total="total"
+              @current-change="handlePageChange"
+            />
+          </div>
         </el-card>
       </el-col>
 
@@ -134,13 +135,18 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { onMounted, reactive, ref, watch } from "vue";
 import axios from "axios";
+import InteractionsPanel from "../../components/InteractionsPanel.vue";
 
 
 const items = ref<any[]>([]);
 const filters = reactive({ keyword: "" });
 const mode = ref<"resources" | "achievements">("resources");
+const reactFilter = ref<"all" | "liked" | "favorited">("all");
+const page = ref(1);
+const pageSize = ref(10);
+const total = ref(0);
 const upload = reactive({
   resource_type: "paper",
   title: "",
@@ -155,10 +161,15 @@ async function load() {
   const resp = await axios.get("/api/resources", {
     params: {
       keyword: filters.keyword || undefined,
-      category: mode.value === "achievements" ? "成果" : undefined
+      category: mode.value === "achievements" ? "成果" : undefined,
+      like_only: reactFilter.value === "liked" ? 1 : undefined,
+      favorite_only: reactFilter.value === "favorited" ? 1 : undefined,
+      page: page.value,
+      page_size: pageSize.value
     }
   });
   items.value = resp.data.items;
+  total.value = resp.data.total || 0;
 }
 
 
@@ -200,13 +211,29 @@ async function doUpload() {
 }
 
 
-async function like(r: any) {
-  await axios.post("/api/reactions/toggle", {
-    target_type: "resource",
-    target_id: r.id,
-    reaction_type: "like"
-  });
+function handleInteractionChanged() {
+  if (reactFilter.value !== "all") {
+    load();
+  }
 }
+
+
+function handlePageChange(p: number) {
+  page.value = p;
+  load();
+}
+
+
+watch(mode, () => {
+  page.value = 1;
+  load();
+});
+
+
+watch(reactFilter, () => {
+  page.value = 1;
+  load();
+});
 
 
 onMounted(() => {

@@ -1,10 +1,20 @@
+from datetime import datetime, timedelta
+
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from ..extensions import db
-from ..models import CooperationRequest, CooperationStatus, Resource, ReviewStatus, TeacherPost, User
+from ..models import (
+    CooperationRequest,
+    CooperationStatus,
+    Message,
+    Resource,
+    ReviewStatus,
+    TeacherPost,
+    User,
+)
 from ..rbac import require_roles
-from ..utils import now_utc
+from ..utils import json_loads, now_utc
 
 
 bp = Blueprint("admin", __name__)
@@ -49,6 +59,106 @@ def stats():
             "users": User.query.count(),
             "teacher_posts": TeacherPost.query.count(),
             "resources": Resource.query.count(),
+        }
+    )
+
+
+@bp.get("/analytics")
+@require_roles(["admin"])
+def analytics():
+    now = now_utc()
+
+    # 日维度：最近 14 天发布量 / 沟通量
+    days_span = 14
+    start_day = (now - timedelta(days=days_span - 1)).date()
+
+    posts_recent = TeacherPost.query.filter(TeacherPost.created_at >= datetime.combine(start_day, datetime.min.time())).all()
+    messages_recent = Message.query.filter(Message.created_at >= datetime.combine(start_day, datetime.min.time())).all()
+
+    def count_by_date(rows, attr="created_at"):
+        m = {}
+        for r in rows:
+            d = getattr(r, attr).date().isoformat()
+            m[d] = m.get(d, 0) + 1
+        result = []
+        for i in range(days_span):
+            d = (start_day + timedelta(days=i)).isoformat()
+            result.append({"date": d, "count": m.get(d, 0)})
+        return result
+
+    posts_daily = count_by_date(posts_recent)
+    messages_daily = count_by_date(messages_recent)
+
+    # 月维度：最近 6 个月发布量 / 沟通量
+    def month_key(dt: datetime) -> str:
+        return dt.strftime("%Y-%m")
+
+    months_span = 6
+    # 取最近 6 个月的第一天
+    first_of_this_month = datetime(now.year, now.month, 1)
+    start_month_dt = first_of_this_month - timedelta(days=30 * (months_span - 1))
+
+    posts_recent_month = TeacherPost.query.filter(TeacherPost.created_at >= start_month_dt).all()
+    messages_recent_month = Message.query.filter(Message.created_at >= start_month_dt).all()
+
+    def count_by_month(rows):
+        m = {}
+        for r in rows:
+            k = month_key(r.created_at)
+            m[k] = m.get(k, 0) + 1
+        result = []
+        cur = first_of_this_month
+        for i in range(months_span):
+            k = cur.strftime("%Y-%m")
+            result.append({"month": k, "count": m.get(k, 0)})
+            # 上一月
+            if cur.month == 1:
+                cur = datetime(cur.year - 1, 12, 1)
+            else:
+                cur = datetime(cur.year, cur.month - 1, 1)
+        result.reverse()
+        return result
+
+    posts_monthly = count_by_month(posts_recent_month)
+    messages_monthly = count_by_month(messages_recent_month)
+
+    # 热门方向：统计教师项目的 tags / tech_stack 出现频次
+    tag_counter = {}
+    all_posts = TeacherPost.query.all()
+    for p in all_posts:
+        tags = json_loads(p.tags_json, []) or []
+        techs = json_loads(p.tech_stack_json, []) or []
+        for t in list(tags) + list(techs):
+            if not t:
+                continue
+            name = str(t)
+            tag_counter[name] = tag_counter.get(name, 0) + 1
+    hot_topics = [
+        {"name": name, "count": count}
+        for name, count in sorted(tag_counter.items(), key=lambda x: x[1], reverse=True)[:10]
+    ]
+
+    # 竞赛参与趋势：近 6 个月内，post_type=competition 且 final_status=confirmed 的合作数
+    coop_q = CooperationRequest.query.filter_by(final_status=CooperationStatus.confirmed.value).all()
+    comp_counter = {}
+    for r in coop_q:
+        post = TeacherPost.query.get(r.post_id) if r.post_id else None
+        if not post or post.post_type != "competition":
+            continue
+        k = month_key(r.created_at)
+        comp_counter[k] = comp_counter.get(k, 0) + 1
+    competition_trend = [
+        {"month": m["month"], "count": comp_counter.get(m["month"], 0)} for m in posts_monthly
+    ]
+
+    return jsonify(
+        {
+            "posts_daily": posts_daily,
+            "messages_daily": messages_daily,
+            "posts_monthly": posts_monthly,
+            "messages_monthly": messages_monthly,
+            "hot_topics": hot_topics,
+            "competition_trend": competition_trend,
         }
     )
 

@@ -36,13 +36,17 @@ def list_conversations():
         other_id = c.student_user_id if user.role == Role.teacher.value else c.teacher_user_id
         other = User.query.get(other_id)
         unread = Message.query.filter_by(conversation_id=c.id, is_read=False).filter(Message.sender_user_id != user.id).count()
+        last = Message.query.filter_by(conversation_id=c.id).order_by(Message.created_at.desc()).first()
         items.append(
             {
                 "id": c.id,
                 "other": {"id": other.id, "display_name": other.display_name, "role": other.role} if other else None,
                 "unread": unread,
+                "last_message": last.content if last and last.content else ("[文件]" if last and last.file_id else None),
+                "last_at": last.created_at.isoformat() if last else c.created_at.isoformat(),
             }
         )
+    items.sort(key=lambda x: x.get("last_at") or "", reverse=True)
     return jsonify({"items": items})
 
 
@@ -106,4 +110,3 @@ def send_message():
     db.session.add(m)
     db.session.commit()
     return jsonify({"id": m.id})
-

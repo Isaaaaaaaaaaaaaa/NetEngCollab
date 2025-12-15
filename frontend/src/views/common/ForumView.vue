@@ -6,6 +6,11 @@
         <p class="page-subtitle">按研究方向与竞赛类型划分的板块交流空间</p>
       </div>
       <el-space :size="8">
+        <el-radio-group v-model="reactFilter" size="small">
+          <el-radio-button label="all">全部</el-radio-button>
+          <el-radio-button label="liked">我点赞的</el-radio-button>
+          <el-radio-button label="favorited">我收藏的</el-radio-button>
+        </el-radio-group>
         <el-input
           v-model="filters.keyword"
           size="small"
@@ -30,7 +35,7 @@
                 v-for="t in topics"
                 :key="t.id"
                 style="padding:8px 0; border-bottom:1px solid rgba(148,163,184,0.25);"
-              >
+                >
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
                   <span class="truncate" style="max-width:220px; font-weight:500;">{{ t.title }}</span>
                   <span class="pill badge-blue" style="font-size:10px;">{{ t.category }}</span>
@@ -41,9 +46,22 @@
                 <div style="display:flex; flex-wrap:wrap; gap:4px;">
                   <span v-for="tag in t.tags" :key="tag" class="tag">{{ tag }}</span>
                 </div>
+                <div style="margin-top:4px;">
+                  <InteractionsPanel :target-type="'forum_topic'" :target-id="t.id" />
+                </div>
               </li>
             </ul>
           </el-scrollbar>
+          <div v-if="total > pageSize" style="margin-top:8px; text-align:right;">
+            <el-pagination
+              background
+              layout="prev, pager, next"
+              :current-page="page"
+              :page-size="pageSize"
+              :total="total"
+              @current-change="handlePageChange"
+            />
+          </div>
         </el-card>
       </el-col>
 
@@ -86,12 +104,17 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { onMounted, reactive, ref, watch } from "vue";
 import axios from "axios";
+import InteractionsPanel from "../../components/InteractionsPanel.vue";
 
 
 const topics = ref<any[]>([]);
 const filters = reactive({ keyword: "" });
+const reactFilter = ref<"all" | "liked" | "favorited">("all");
+const page = ref(1);
+const pageSize = ref(10);
+const total = ref(0);
 const form = reactive({
   category: "机器学习",
   title: "",
@@ -102,9 +125,16 @@ const form = reactive({
 
 async function load() {
   const resp = await axios.get("/api/forum/topics", {
-    params: { keyword: filters.keyword || undefined }
+    params: {
+      keyword: filters.keyword || undefined,
+      like_only: reactFilter.value === "liked" ? 1 : undefined,
+      favorite_only: reactFilter.value === "favorited" ? 1 : undefined,
+      page: page.value,
+      page_size: pageSize.value
+    }
   });
   topics.value = resp.data.items;
+  total.value = resp.data.total || 0;
 }
 
 
@@ -124,6 +154,18 @@ async function publish() {
   form.tags = "";
   await load();
 }
+
+
+function handlePageChange(p: number) {
+  page.value = p;
+  load();
+}
+
+
+watch(reactFilter, () => {
+  page.value = 1;
+  load();
+});
 
 
 onMounted(() => {
