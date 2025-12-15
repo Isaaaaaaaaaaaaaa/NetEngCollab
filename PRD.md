@@ -1,245 +1,245 @@
-网工师生协作平台（两人完成版）项目文档
+网工师生协作平台（四人分工版）PRD
 
 ---
 
-## 1. 项目概述
+## 1. 系统需求分析
 
-本项目实现“网络工程专业师生协作平台”，目标是让教师发布科研/大创/竞赛信息，学生发布技能与意愿信息，双方双向选择并通过站内沟通确认合作；同时提供资源共享、进度管理、成果沉淀、讨论区与组队互助等扩展功能。
+### 1.1 背景与目标
 
-技术架构：
-- 前端：Vue3 + TypeScript + Pinia + Vue Router + Element Plus
-  - 三套角色工作台（学生 / 教师 / 管理员），统一白色简约风格布局
-  - 使用 Element Plus 的 `el-layout`、`el-card`、`el-table`、`el-form`、`el-timeline` 等组件实现仪表盘和业务界面
-- 后端：Flask + SQLAlchemy + Flask-JWT-Extended（基于 RBAC 的权限控制）
-  - Blueprints 按模块拆分（auth、posts、resources、messages、cooperation、forum、teamup、match、progress、notifications、admin）
-- 数据库：MySQL（通过 `DATABASE_URL` 配置，可切换 SQLite 方便开发）
+网络工程专业的科研/竞赛/大创合作通常依赖线下沟通与群聊，存在信息分散、筛选效率低、合作过程难追踪等问题。本系统面向“教师—学生”协作场景，提供从信息发布、双向选择、站内沟通到过程管理与成果沉淀的一体化平台。
 
----
+核心目标：
+- 让教师高效发布项目/竞赛需求，学生可检索筛选并发起申请。
+- 支持双向选择：教师可邀请学生；学生可申请加入教师项目。
+- 合作达成后可进行里程碑与进度更新，形成过程留痕。
+- 管理员提供全局盘点能力：人员概览、项目概览、基础统计。
 
-## 2. 两人分工（按角色与模块拆分，前后端都参与）
+### 1.2 角色与权限
 
-### 成员 A：学生端负责人（同时负责后端学生相关模块）
+- 学生：浏览全部教师项目；维护个人画像；对项目发起申请；处理教师邀请；查看合作项目进度；私信沟通；上传/浏览资源。
+- 教师：仅管理自己发布的项目；浏览学生画像；对学生发起邀请；处理学生申请；查看合作项目与进度；私信沟通。
+- 管理员：总览统计；人员概览（筛选、查看、重置密码）；项目概览（查看全部项目及选择情况）；合作记录全局查看与异常释放。
 
-- 前端：
-  - 学生登录流程与学生工作台页面
-  - “我的画像”页面（技能、兴趣、可投入时间、可见范围）
-  - 教师项目浏览、收藏、申请加入
-  - 资源库浏览与上传入口
-  - 讨论区、组队互助页面
-  - 私信页面（会话与消息）
+### 1.3 功能需求
 
-- 后端：
-  - 学生画像 `GET/PUT /api/student-profile`
-  - 教师项目列表 `GET /api/teacher-posts` 的筛选能力
-  - 评论/点赞/收藏 `POST /api/comments`、`POST /api/reactions/toggle`
-  - 智能匹配 `GET /api/match/top`（学生侧推荐项目）
-  - 资源库 `POST/GET /api/resources`、文件上传下载 `/api/files`
-  - 讨论区与组队互助 ` /api/forum/*`、`/api/teamup`
+（1）信息发布与检索
+- 教师发布项目/竞赛信息：标题、内容、标签、技术栈、人数、周期、截止时间、联系方式、可见性、附件。
+- 学生浏览项目：支持按关键字、标签、技术栈、类型筛选。
+- 教师浏览学生画像：支持按方向、技能、关键字筛选。
 
-### 成员 B：教师端 + 管理员端负责人（同时负责后端审核/合作模块）
+（2）双向选择（合作流程）
+- 教师邀请学生：邀请时必须选择自己的某个项目；学生可看到“哪个老师+哪个项目”的邀请。
+- 学生申请加入：学生针对某个项目发起申请。
+- 状态显示：双方均能看到每条申请/邀请的状态（待处理/已接受/已拒绝/已确认）。
+- 确认规则：
+  - 教师邀请学生：学生接受后立即达成双选并进入“已确认”。
+  - 学生申请教师：教师同意后立即达成双选并进入“已确认”。
 
-- 前端：
-  - 教师工作台：项目发布、学生匹配、合作项目进度
-  - 管理员控制台：账号审核、内容审核、统计数据
-  - 教师处理合作请求、里程碑与进度更新 UI
+（3）过程管理
+- 合作项目自动生成：双选确认后生成合作项目实体，用于后续进度管理。
+- 里程碑：新增、更新状态（todo/doing/done）、设置截止日期。
+- 进度更新：发布文字更新，可附带文件。
 
-- 后端：
-  - RBAC 与登录鉴权 `/api/auth/login`、`/api/auth/me`
-  - 教师发布 `POST /api/teacher-posts`（提交后管理员审核）
-  - 合作流程：申请/邀请、接受/拒绝、确认后生成合作项目
-    - `POST /api/cooperation/request`
-    - `POST /api/cooperation/requests/<id>/respond`
-    - `GET /api/cooperation/projects`
-  - 进度管理（里程碑/更新）：
-    - `GET/POST /api/projects/<id>/milestones`
-    - `GET/POST /api/projects/<id>/updates`
-  - 管理员审核接口：
-    - 账号审核：`/api/admin/pending-users`、`/api/admin/users/<id>/set-active`
-    - 项目审核：`/api/admin/pending-teacher-posts`、`/api/admin/teacher-posts/<id>/review`
-    - 资源审核：`/api/admin/pending-resources`、`/api/admin/resources/<id>/review`
-    - 统计：`/api/admin/stats`
+（4）资源共享与交流
+- 资源中心：上传与下载资源文件，支持分类与标签。
+- 站内私信：教师与学生一对一会话、发送消息与附件。
+- 讨论区/组队互助：支持发布话题与回复，支持组队需求发布。
+
+（5）管理员功能
+- 总览：展示用户数、项目数、资源数等关键指标。
+- 人员概览：查看全部老师/学生账号信息，按角色筛选，侧边栏按姓名快速定位，支持重置密码。
+- 项目概览：查看全部项目详情、发布教师、所有选择该项目的学生及状态。
+
+### 1.4 非功能需求
+
+- 易用性：三套角色工作台，布局简洁；核心操作不超过 3 次点击完成。
+- 安全性：JWT 登录态；基于角色的接口保护；不在前端存储明文密码。
+- 可维护性：后端按 Blueprint 模块化拆分；前端按角色路由拆分；统一接口封装与错误提示。
+- 性能：列表接口默认限制返回条数（如项目列表最多 200 条），避免一次性拉取过大数据。
 
 ---
 
-## 3. 功能实现说明（对应指导书模块）
+## 2. 系统设计
 
-### 3.1 信息发布模块
+### 2.1 系统结构设计
 
-- 教师发布通道：教师发布科研/大创/竞赛信息（统一为 teacher_posts 表，区分 post_type）
-- 学生发布通道：学生完善技能画像与合作意愿（student_profiles 表）
-- 评论/点赞/收藏：comments + reactions（支持 like / favorite）
+系统采用 B/S 架构，前后端分离：
+- 前端：Vue3 + TypeScript + Pinia + Vue Router + Element Plus，提供学生端/教师端/管理员端三套工作台。
+- 后端：Flask + SQLAlchemy + Flask-JWT-Extended，提供 REST API；RBAC 通过装饰器限制管理员接口。
+- 数据库：MySQL（支持通过 `DATABASE_URL` 切换 SQLite 便于开发）。
 
-### 3.2 信息检索与匹配模块
+关键设计点：
+- 统一“教师项目”数据模型（`teacher_posts`），用 `post_type` 区分科研/大创/竞赛。
+- 用 `cooperation_requests` 记录双向选择状态，用 `cooperation_projects` 承接确认后的过程管理。
+- 可见性控制：`visibility` 支持 public/teacher_only/student_only；项目列表按可见性与审核状态过滤。
 
-- 多维筛选：关键字、标签、技术栈筛选项目；关键字/技能筛选学生
-- 智能匹配推荐（选作实现）：`/api/match/top` 使用标签集合相似度（Jaccard）推荐 TOP10
-- 匹配提醒（选作实现）：提供 `notifications` 表与 `/api/notifications` 接口，前端轮询展示提醒面板
+### 2.2 系统模块设计（按四人分工展开）
 
-### 3.3 双向沟通与合作确认模块
+#### 2.2.1 组长：总体架构与核心业务流
 
-- 站内私信：会话 `conversations` + 消息 `messages`，支持未读数
-- 合作申请/邀请：cooperation_requests 记录双向选择状态
-- 确认与备案：当师生双方均 accept 时 final_status 变为 confirmed，并生成 cooperation_projects 作为合作备案记录
+- 负责模块：鉴权与权限控制、合作流程核心、通知机制、系统集成与部署。
+- 模块联系：
+  - `auth` 为全模块提供身份；
+  - `cooperation` 串联 `teacher_posts`、`users`、`notifications` 与 `cooperation_projects`；
+  - `progress` 依赖 `cooperation_projects` 作为过程载体。
 
-### 3.4 资源共享模块（扩展功能）
+#### 2.2.2 队员 1：教师端模块
 
-- 资源库：resources + files，支持上传、下载、标签筛选
-- 审核：学生/教师上传资源默认 pending，管理员审核通过后展示
+- 负责模块：教师项目管理、学生匹配与邀请、教师工作台指标展示、合作项目的过程入口。
+- 模块联系：
+  - 调用 `teacher-posts` 完成发布/编辑；
+  - 调用 `cooperation/requests` 获取申请列表并处理；
+  - 调用 `students` 浏览学生画像并发起邀请。
 
-### 3.5 进度管理与成果展示模块（扩展功能）
+#### 2.2.3 队员 2：学生端模块
 
-- 合作项目：confirmed 后自动生成 project
-- 里程碑：milestones
-- 进度更新：progress_updates（可挂载附件）
+- 负责模块：学生工作台、项目浏览筛选、申请与邀请处理、学生画像、资源中心入口。
+- 模块联系：
+  - 调用 `teacher-posts` 获取项目列表；
+  - 调用 `cooperation/request` 发起申请、调用 `respond` 处理教师邀请；
+  - 调用 `student-profile` 维护画像并支撑匹配与展示。
 
-### 3.6 互动交流模块（扩展功能）
+#### 2.2.4 队员 3：管理员端与测试保障模块
 
-- 话题讨论区：forum_topics + forum_replies
-- 组队互助区：teamup_posts
+- 负责模块：管理员总览、人员概览、项目概览、合作记录全局查看与异常释放、测试方案与联调。
+- 模块联系：
+  - 调用 `admin/users` 做人员筛选与详情；
+  - 调用 `admin/projects` 查看全项目与选择情况；
+  - 调用 `admin/stats` 与 `admin/cooperations` 做数据盘与问题定位。
 
-### 3.7 数据统计与分析模块（扩展功能）
+### 2.3 数据库设计（按四人分工展开）
 
-- 管理员统计：`/api/admin/stats`（用户数/发布数/资源数）
+#### 2.3.1 组长：核心表与关系设计
 
-此外新增：
-- 管理员合作情况总览：`/api/admin/cooperations` 返回所有师生互选记录及汇总（总数 / 已确认 / 已拒绝 / 待处理）
+- `users`：账号中心表，字段：`username`、`password_hash`、`role`、`display_name`、`email`、`phone`、`is_active`、`created_at`。
+- `teacher_posts`：教师发布信息表，字段：`teacher_user_id`、`post_type`、`title`、`content`、`tech_stack_json`、`tags_json`、`recruit_count`、`duration`、`deadline`、`attachment_file_id`、`visibility`、`review_status`、`created_at`。
+- `cooperation_requests`：双向选择状态表，字段：`teacher_user_id`、`student_user_id`、`post_id`、`initiated_by`、`teacher_status`、`student_status`、`final_status`、`created_at`。
+- `cooperation_projects`：确认后项目表，字段：`request_id`（唯一）、`title`、`created_at`。
 
----
+#### 2.3.2 队员 1：教师侧相关数据
 
-## 5. 数据库设计概述
+- 教师画像：`teacher_profiles`，字段：`title`、`organization`、`bio`、`research_tags_json`、`auto_reply`。
+- 教师端关注的联表视图：
+  - “我的项目列表”由 `teacher_posts.teacher_user_id` 过滤得到。
+  - “选择该项目的学生”由 `cooperation_requests.post_id` 关联得到，并显示 `teacher_status/student_status/final_status`。
 
-本项目采用关系型数据库（MySQL），核心表及关系如下（仅列出重点字段）：
+#### 2.3.3 队员 2：学生侧相关数据
 
-1. `users`
-   - `id`（PK）、`username`、`password_hash`、`role`（student/teacher/admin）、`display_name`、`email`、`phone`、`is_active`、`created_at`
-   - 不同角色的公共账号信息，RBAC 的基础
+- 学生画像：`student_profiles`，字段：`direction`、`skills_json`、`interests_json`、`weekly_hours`、`prefer_local`、`accept_cross`、`resume_file_id`、`visibility`。
+- 私信：`conversations`（唯一约束教师+学生对）与 `messages`（含 `file_id`、`is_read`）。
 
-2. `student_profiles`
-   - `user_id`（PK, FK->users.id）、`direction`、`skills_json`、`project_links_json`、`interests_json`、`weekly_hours`、`prefer_local`、`accept_cross`、`visibility`、`updated_at`
-   - 用 JSON 存储技能和兴趣标签，方便前端展示与匹配
+#### 2.3.4 队员 3：管理与扩展数据
 
-3. `teacher_profiles`
-   - `user_id`（PK, FK->users.id）、`title`、`organization`、`bio`、`research_tags_json`、`updated_at`
-   - 教师画像（职称、单位、研究方向标签）
+- 资源库：`resources` + `files`，`resources.file_id` 关联文件存储元数据。
+- 通知：`notifications`，用于合作申请/处理等系统消息。
+- 讨论/组队：`forum_topics`、`forum_replies`、`teamup_posts`。
 
-4. `teacher_posts`
-   - `id`（PK）、`teacher_user_id`（FK->users.id）、`post_type`（project/innovation/competition）、`title`、`content`、`tech_stack_json`、`tags_json`、`recruit_count`、`duration`、`outcome`、`contact`、`deadline`、`visibility`、`review_status`、`created_at`、`updated_at`
-   - 老师发布的科研项目 / 大创 / 竞赛信息
+### 2.4 界面设计（按四人分工展开）
 
-5. `cooperation_requests`
-   - `id`（PK）、`teacher_user_id`、`student_user_id`、`post_id`（FK->teacher_posts.id）、`initiated_by`（student/teacher）、`teacher_status`、`student_status`、`final_status`、`created_at`、`updated_at`
-   - 记录每一条合作申请/邀请，以及双方状态；`final_status=confirmed` 时表示已双向确认
+#### 2.4.1 组长：全局交互与通用规范
 
-6. `cooperation_projects`
-   - `id`（PK）、`request_id`（FK->cooperation_requests.id）、`title`、`created_at`
-   - 对应每一条已确认合作关系的“合作项目”实体，用于进度管理
+- 统一布局：顶部栏 + 左侧导航 + 内容区；按钮与表单风格统一使用 Element Plus。
+- 全局提示：操作成功/失败统一 toast；列表为空时提示引导。
+- 登录与角色跳转：登录后根据 `role` 进入对应工作台。
 
-7. `milestones`
-   - `id`（PK）、`project_id`（FK->cooperation_projects.id）、`title`、`due_date`、`status`（todo/doing/done）、`created_at`
-   - 项目的里程碑节点
+#### 2.4.2 队员 1：教师端关键页面
 
-8. `progress_updates`
-   - `id`（PK）、`project_id`（FK->cooperation_projects.id）、`author_user_id`、`content`、`attachment_file_id`、`created_at`
-   - 项目进度更新记录
+- 教师工作台：关键指标卡片 + 待处理申请列表 + 最近项目。
+- 项目与竞赛管理：左侧项目侧边栏，右侧项目详情（可编辑）；“发布新项目”按钮弹窗表单发布。
+- 学生匹配：学生列表 + 详情卡片；邀请时必须选择教师自己的项目。
 
-9. `files` & `resources`
-   - `files`：`id`、`owner_user_id`、`original_name`、`storage_name`、`content_type`、`size_bytes`、`created_at`
-   - `resources`：`id`、`uploader_user_id`、`resource_type`、`title`、`description`、`category`、`tags_json`、`file_id`、`review_status`、`created_at`
-   - 用于科研/竞赛资源库与文件存储
+#### 2.4.3 队员 2：学生端关键页面
 
-10. 讨论与组队相关表
-    - `forum_topics` / `forum_replies`：话题讨论区
-    - `teamup_posts`：组队互助区需求信息
+- 学生工作台：精简信息密度，上方展示提醒与待办，下方展示资源与动态。
+- 项目浏览：筛选条 + 列表；项目详情中展示“申请状态/邀请状态”。
+- 邀请处理：在工作台展示“合作邀请”卡片，支持接受/拒绝。
 
-11. 私信与通知
-    - `conversations` / `messages`：老师和学生一对一站内私信（支持未读状态）
-    - `notifications`：系统通知（合作申请、审核结果等），由后端通过 `push_notification` 统一写入
+#### 2.4.4 队员 3：管理员端关键页面
 
-整体上，`users` 作为中心表，扩展学生/教师画像、发布信息、合作请求等多张业务表。通过外键保持数据一致性，并在序列化时返回给前端使用。
-
----
-
-## 6. 前后端设计概述
-
-### 6.1 后端模块划分（Flask + Blueprints）
-
-- `app/routes/auth.py`
-  - 账号注册（区分角色）、登录、获取当前用户信息 `/api/auth/register` `/api/auth/login` `/api/auth/me`
-
-- `app/routes/posts.py`
-  - 教师发布/修改项目信息：`POST /api/teacher-posts`、`PUT /api/teacher-posts/<id>`
-  - 项目列表查询：`GET /api/teacher-posts` 支持按关键字、类型、标签、技术栈筛选
-  - 学生画像查询/更新：`GET/PUT /api/student-profile`
-
-- `app/routes/cooperation.py`
-  - 创建合作申请/邀请：`POST /api/cooperation/request`
-  - 查询当前用户相关的合作请求：`GET /api/cooperation/requests`（支持按 `post_id` 过滤）
-  - 双方响应（接受/拒绝）：`POST /api/cooperation/requests/<id>/respond`
-  - 合作项目列表：`GET /api/cooperation/projects`
-  - 在处理请求时结合 `services.push_notification` 推送系统通知
-
-- `app/routes/messages.py`
-  - 会话列表、消息列表、发送消息：`GET /api/conversations`、`GET /api/conversations/<id>/messages`、`POST /api/messages/send`
-
-- `app/routes/resources.py`
-  - 文件上传/下载：`POST/GET /api/files`
-  - 资源上传/列表：`POST/GET /api/resources`
-
-- 其他模块：
-  - `forum.py`（讨论区）、`teamup.py`（组队互助）、`match.py`（智能匹配）、`progress.py`（里程碑与进度管理）、`notifications.py`（系统通知）、`admin.py`（管理员功能，如账号审核、内容审核、统计与合作总览）。
-
-### 6.2 前端路由与页面设计（Vue3 + Element Plus）
-
-- 路由按角色拆分：
-  - 学生端：`/student/dashboard`、`/student/projects`、`/student/profile`、`/student/resources`、`/student/forum`、`/student/teamup`、`/student/messages`
-  - 教师端：`/teacher/dashboard`、`/teacher/posts`、`/teacher/students`、`/teacher/projects`、`/teacher/resources`、`/teacher/forum`、`/teacher/teamup`、`/teacher/messages`
-  - 管理员端：`/admin/dashboard`、`/admin/users`、`/admin/content`
-
-- 学生端：
-  - 总览页：三个统计卡片 + 匹配项目时间线 + 合作项目表格 + 技能画像摘要 + 资源/动态卡片
-  - 项目与匹配：表格展示项目列表，右侧智能匹配推荐；新增“我的申请状态”列，基于 `/api/cooperation/requests` 显示每个项目对当前学生的申请状态（未申请/待处理/已确认/已拒绝等）
-  - 我的画像：双栏表单 + tag 组件维护技能画像和项目链接
-  - 资源库、讨论区、组队互助、私信：统一使用 Element Plus 表格/表单/时间线等组件，呈现资源列表、话题列表、组队需求和类聊天界面
-
-- 教师端：
-  - 总览页：已发布项目/进行中合作/推荐学生/待处理请求四个指标卡片 + 最近项目时间线 + 合作项目表 + 合作请求与推荐学生列表
-  - 项目与竞赛：左侧表格查看项目列表，右侧表单发布新项目，并新增“编辑”按钮 + 弹窗，调用 `PUT /api/teacher-posts/<id>` 修改项目信息
-  - 学生匹配：左侧表格浏览学生画像，右侧详情卡片展示选中学生的技能与合作偏好，并提供“发出合作邀请”和“发私信”按钮
-  - 合作项目：左侧选择项目，中间查看/添加里程碑，右侧查看与登记进度更新
-
-- 管理员端：
-  - 总览：统计卡片 + 三类待办事项列表 + “师生合作情况”区块，调用 `/api/admin/cooperations` 展示师生互选记录和汇总统计
-  - 账号审核：表格显示待审核账号，提供“通过/禁用”操作，调用 `/api/admin/users/<id>/set-active`
-  - 内容审核：表格展示待审核项目和资源，管理员可分别进行“通过/拒绝”操作
+- 管理员导航仅保留：总览、人员概览、项目概览。
+- 人员概览：左侧姓名列表，右侧详情面板；角色筛选；重置密码入口。
+- 项目概览：左侧项目列表，右侧项目详情与选择学生状态表。
 
 ---
 
-## 4. 测试与联调
+## 3. 系统实现（按四人分工展开）
 
-### 4.1 后端自动化测试
+### 3.1 组长：鉴权、RBAC、合作流程与通知
 
-后端已提供 pytest 测试：
+- 鉴权：后端使用 JWT，登录接口签发 token；前端统一在请求头携带 `Authorization`。
+- RBAC：管理员接口通过 `require_roles(["admin"])` 保护，避免越权调用。
+- 合作流程实现：
+  - 创建请求：`POST /api/cooperation/request`，根据 `initiated_by` 自动将发起方状态置为 `accepted`。
+  - 响应请求：`POST /api/cooperation/requests/<id>/respond`。
+  - 自动确认：当教师与学生状态均为 `accepted` 时，`final_status` 更新为 `confirmed`，并生成 `cooperation_projects`。
+  - 规则落地：学生申请时教师同意立即确认；教师邀请时学生同意立即确认。
+- 通知：合作申请/处理会写入 `notifications`，用于前端提醒展示。
 
-```bash
-cd backend
-python3 -m pytest -q
-```
+### 3.2 队员 1：教师端项目管理与申请处理
 
-覆盖：健康检查、管理员登录、教师注册待审核->管理员启用->发布项目->管理员审核->学生申请->双方确认->生成合作项目。
+- 项目发布/编辑：
+  - 发布：`POST /api/teacher-posts`，支持附件 `attachment_file_id` 与可见性 `visibility`。
+  - 编辑：`PUT /api/teacher-posts/<id>`，仅允许本人项目修改。
+- 侧边栏 + 详情页：教师端以“项目列表 + 详情面板”呈现完整信息，并在详情中展示“选择该项目的学生”及其状态。
+- 申请处理：教师在项目详情页对待处理的学生申请点击“同意”，调用 `respond` 接口，确认后按钮消失、状态更新。
 
-### 4.2 前后端联调
+### 3.3 队员 2：学生端浏览筛选、申请与邀请处理
 
-联调方式：
-- 后端运行在 `http://localhost:5000`
-- 前端运行在 `http://localhost:5173`
-- `frontend/vite.config.ts` 已配置 `/api` 代理到后端
+- 项目列表：`GET /api/teacher-posts`，支持 `keyword/tag/tech/post_type` 组合筛选。
+- 发起申请：学生在项目详情或列表操作中调用 `POST /api/cooperation/request`（携带 `post_id`）。
+- 邀请处理：学生在工作台“合作邀请”中对教师邀请点击接受/拒绝，调用 `POST /api/cooperation/requests/<id>/respond`。
+- 学生画像：`GET/PUT /api/student-profile` 维护技能、兴趣、周投入时间、可见性等字段。
 
-建议联调路径（答辩演示同路径）：
-- 管理员登录 -> 审核教师账号
-- 教师登录 -> 发布项目（待审核）
-- 管理员审核项目
-- 学生登录 -> 浏览项目 -> 申请加入
-- 教师登录 -> 接受申请 -> 学生确认 -> 生成合作项目
-- 教师在“合作项目”配置里程碑并更新进度
-- 学生/教师私信沟通
-- 上传资源 -> 管理员审核 -> 全平台可下载
+### 3.4 队员 3：管理员总览、人员/项目概览与质量保障
+
+- 总览统计：`GET /api/admin/stats` 返回用户数、项目数、资源数。
+- 人员概览：`GET /api/admin/users?role=...` 支持按角色筛选；`POST /api/admin/users/<id>/set-password` 支持重置密码。
+- 项目概览：`GET /api/admin/projects` 返回全部项目、发布教师信息、选择该项目的学生及其状态。
+- 异常处理：`POST /api/admin/cooperations/<id>/release` 可将异常合作记录置为拒绝状态，便于演示与数据回收。
+
+---
+
+## 4. 系统测试与结果（按四人分工展开）
+
+### 4.1 组长：核心流程与安全测试
+
+- 鉴权测试：未携带 token 访问受保护接口应返回 401；非管理员访问管理员接口返回 403。
+- 合作流程测试：
+  - 学生申请 → 教师同意 → 立即变为 `confirmed`，且生成合作项目。
+  - 教师邀请 → 学生同意 → 立即变为 `confirmed`，且生成合作项目。
+- 通知测试：创建与响应合作请求后，目标用户 `notifications` 增加记录，标题与摘要符合预期。
+
+### 4.2 队员 1：教师端功能验证
+
+- 发布新项目弹窗：点击“发布新项目”弹出表单，填入标题/内容等字段后发布成功，项目列表自动刷新。
+- 仅可见本人项目：教师端列表中只展示当前教师发布的项目；不能编辑他人项目。
+- 处理待处理申请：待处理项显示“同意”按钮；点击后状态更新为“已确认”，按钮消失。
+
+### 4.3 队员 2：学生端功能验证
+
+- 项目筛选：关键字、标签、技术栈筛选组合可用，结果与预期一致。
+- 申请与邀请：学生发起申请后在状态列可见；收到教师邀请后可在工作台处理。
+- 首页信息密度：资源与最近动态下移至页面底部区域，确保首页聚焦“提醒与待办”。
+
+### 4.4 队员 3：管理员端与数据一致性验证
+
+- 人员概览：按角色筛选显示正确；侧边栏切换人员详情无异常；重置密码后可使用新密码登录。
+- 项目概览：可看到项目发布教师与所有选择学生；各条记录的 `teacher_status/student_status/final_status` 显示一致。
+- 基础性能：在 200 条项目、500 条申请记录规模内，列表加载与切换保持可用（无明显卡顿）。
+
+---
+
+## 5. 总结
+
+### 5.1 开发过程中的主要问题与解决方法
+
+- 合作状态机易产生“互相等待”：通过在响应接口中对“学生发起申请”场景做立即确认规则，避免教师同意后仍需学生二次确认。
+- 角色可见性边界易混淆：在列表接口中对 `visibility` 与 `review_status` 统一过滤；教师端页面额外按当前教师 ID 过滤，确保只管理本人项目。
+- 发布弹窗交互不稳定：将发布表单收敛为“按钮 + 弹窗表单 + 发布后刷新列表”的固定闭环，提升可用性。
+- 管理员功能过多导致学习成本高：收敛为“总览/人员概览/项目概览”三页，提升答辩演示效率。
+
+### 5.2 后续优化方向
+
+- 管理员端补齐项目增删改查闭环与分页能力。
+- 增强匹配算法（结合技能权重、兴趣、时间投入等）与个性化推荐。
+- 增加操作审计日志与更细粒度权限策略，提升可追溯性与安全性。
