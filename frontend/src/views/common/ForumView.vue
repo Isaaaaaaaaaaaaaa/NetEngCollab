@@ -1,0 +1,132 @@
+<template>
+  <div class="page">
+    <div class="page-header">
+      <div>
+        <h2 class="page-title">话题讨论区</h2>
+        <p class="page-subtitle">按研究方向与竞赛类型划分的板块交流空间</p>
+      </div>
+      <el-space :size="8">
+        <el-input
+          v-model="filters.keyword"
+          size="small"
+          placeholder="关键词，如 CNN"
+          style="width: 220px;"
+          clearable
+        />
+        <el-button size="small" type="primary" plain @click="load">检索</el-button>
+      </el-space>
+    </div>
+
+    <el-row :gutter="16" style="margin-top: 6px;">
+      <el-col :xs="24" :lg="16">
+        <el-card class="app-card" shadow="never">
+          <template #header>
+            <div class="page-subtitle">话题列表</div>
+          </template>
+          <el-empty v-if="!topics.length" description="暂无话题" />
+          <el-scrollbar v-else style="max-height: 420px;">
+            <ul style="list-style:none; padding:0; margin:0; font-size:12px; color:var(--app-text);">
+              <li
+                v-for="t in topics"
+                :key="t.id"
+                style="padding:8px 0; border-bottom:1px solid rgba(148,163,184,0.25);"
+              >
+                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                  <span class="truncate" style="max-width:220px; font-weight:500;">{{ t.title }}</span>
+                  <span class="pill badge-blue" style="font-size:10px;">{{ t.category }}</span>
+                </div>
+                <div style="font-size:12px; color:var(--app-muted); margin-bottom:4px;" class="truncate">
+                  {{ t.content }}
+                </div>
+                <div style="display:flex; flex-wrap:wrap; gap:4px;">
+                  <span v-for="tag in t.tags" :key="tag" class="tag">{{ tag }}</span>
+                </div>
+              </li>
+            </ul>
+          </el-scrollbar>
+        </el-card>
+      </el-col>
+
+      <el-col :xs="24" :lg="8">
+        <el-card class="app-card" shadow="never">
+          <template #header>
+            <div class="page-subtitle">发起话题</div>
+          </template>
+          <el-form :model="form" label-position="top" size="small">
+            <el-form-item label="板块">
+              <el-select v-model="form.category">
+                <el-option label="机器学习讨论区" value="机器学习" />
+                <el-option label="网络安全讨论区" value="网络安全" />
+                <el-option label="ACM 竞赛交流区" value="ACM" />
+                <el-option label="综合讨论" value="综合" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="话题标题">
+              <el-input v-model="form.title" placeholder="话题标题" />
+            </el-form-item>
+            <el-form-item label="内容">
+              <el-input
+                v-model="form.content"
+                type="textarea"
+                :rows="4"
+                placeholder="描述你的问题、经验或观点"
+              />
+            </el-form-item>
+            <el-form-item label="标签（逗号分隔）">
+              <el-input v-model="form.tags" placeholder="如：CV, 算法, 备赛经验" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" style="width:100%;" @click="publish">发布话题</el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
+      </el-col>
+    </el-row>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { onMounted, reactive, ref } from "vue";
+import axios from "axios";
+
+
+const topics = ref<any[]>([]);
+const filters = reactive({ keyword: "" });
+const form = reactive({
+  category: "机器学习",
+  title: "",
+  content: "",
+  tags: ""
+});
+
+
+async function load() {
+  const resp = await axios.get("/api/forum/topics", {
+    params: { keyword: filters.keyword || undefined }
+  });
+  topics.value = resp.data.items;
+}
+
+
+async function publish() {
+  if (!form.title || !form.content) return;
+  await axios.post("/api/forum/topics", {
+    category: form.category,
+    title: form.title,
+    content: form.content,
+    tags: form.tags
+      .split(/[,，]/)
+      .map(x => x.trim())
+      .filter(x => x)
+  });
+  form.title = "";
+  form.content = "";
+  form.tags = "";
+  await load();
+}
+
+
+onMounted(() => {
+  load();
+});
+</script>
