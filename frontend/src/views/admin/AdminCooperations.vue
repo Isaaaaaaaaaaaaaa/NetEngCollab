@@ -7,15 +7,31 @@
       </div>
     </div>
 
-    <el-row :gutter="16" style="margin-top:6px;">
+    <el-row :gutter="16" class="ac-main" style="margin-top:6px;">
       <el-col :xs="24" :lg="7">
-        <el-card class="app-card" shadow="never">
+        <el-card class="app-card ac-card" shadow="never">
           <template #header>
             <div class="page-subtitle">项目列表</div>
           </template>
+          <div style="margin-bottom:8px; display:flex; gap:8px;">
+            <el-select v-model="typeFilter" size="small" clearable placeholder="类型" style="width:120px;">
+              <el-option label="全部类型" value="" />
+              <el-option label="科研项目" value="project" />
+              <el-option label="大创项目" value="innovation" />
+              <el-option label="学科竞赛" value="competition" />
+            </el-select>
+            <el-input
+              v-model="keyword"
+              size="small"
+              clearable
+              placeholder="按项目名搜索"
+              style="width:160px;"
+            />
+            <el-button size="small" @click="reloadWithFilter">筛选</el-button>
+          </div>
           <el-empty v-if="!projects.length" description="暂无项目" />
-          <el-scrollbar v-else style="max-height: 320px;">
-            <ul style="list-style:none; padding:0; margin:0; font-size:12px; color:var(--app-text);">
+          <el-scrollbar v-else class="ac-scroll">
+            <ul style="list-style:none; padding:0; margin:0; font-size:12px; color:var(--app-text); padding-right:6px;">
               <li
                 v-for="p in projects"
                 :key="p.id"
@@ -33,22 +49,22 @@
               </li>
             </ul>
           </el-scrollbar>
+
+          <div v-if="total > pageSize" style="margin-top:8px; text-align:right; flex: 0 0 auto;">
+            <el-pagination
+              background
+              layout="prev, pager, next"
+              :current-page="page"
+              :page-size="pageSize"
+              :total="total"
+              @current-change="handlePageChange"
+            />
+          </div>
         </el-card>
-        <div style="margin-top:8px; text-align:center;">
-          <el-pagination
-            v-if="total > pageSize"
-            background
-            layout="prev, pager, next"
-            :current-page="page"
-            :page-size="pageSize"
-            :total="total"
-            @current-change="handlePageChange"
-          />
-        </div>
       </el-col>
 
-      <el-col :xs="24" :lg="17">
-        <el-card class="app-card" shadow="never">
+          <el-col :xs="24" :lg="17">
+        <el-card class="app-card ac-card" shadow="never">
           <template #header>
             <div class="page-subtitle">项目详情</div>
           </template>
@@ -86,6 +102,11 @@
                   <span class="pill" :class="statusClass(scope.row)" style="font-size:11px;">
                     {{ statusLabel(scope.row) }}
                   </span>
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="120" align="center">
+                <template #default="scope">
+                  <el-button size="small" text type="danger" @click="resetSelection(scope.row)">重置选择</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -145,7 +166,9 @@ const projects = ref<any[]>([]);
 const selectedId = ref<number | null>(null);
 const total = ref(0);
 const page = ref(1);
-const pageSize = ref(20);
+const pageSize = ref(10);
+const typeFilter = ref<string>("");
+const keyword = ref("");
 
 const editVisible = ref(false);
 const editForm = ref({
@@ -184,7 +207,12 @@ function statusClass(row: any) {
 
 async function load() {
   const resp = await axios.get("/api/admin/projects", {
-    params: { page: page.value, page_size: pageSize.value }
+    params: {
+      page: page.value,
+      page_size: pageSize.value,
+      post_type: typeFilter.value || undefined,
+      keyword: keyword.value || undefined
+    }
   });
   projects.value = resp.data.items || [];
   total.value = resp.data.total || 0;
@@ -201,6 +229,13 @@ function select(id: number) {
 
 function handlePageChange(p: number) {
   page.value = p;
+  selectedId.value = null;
+  load();
+}
+
+
+function reloadWithFilter() {
+  page.value = 1;
   selectedId.value = null;
   load();
 }
@@ -245,7 +280,46 @@ async function remove(p: any) {
 }
 
 
+async function resetSelection(row: any) {
+  if (!window.confirm("确认重置该学生的选择状态？重置后老师和学生可以重新发起双选。")) return;
+  await axios.post(`/api/admin/cooperations/${row.id}/reset`);
+  await load();
+}
+
+
 onMounted(() => {
   load();
 });
 </script>
+
+<style scoped>
+.ac-main {
+  align-items: stretch;
+}
+
+.ac-card {
+  height: calc(100vh - 200px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ac-card :deep(.el-card__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.ac-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

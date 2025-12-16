@@ -2,8 +2,8 @@
   <div class="page cp-page">
     <div class="page-header">
       <div>
-        <h2 class="page-title">合作项目进度管理</h2>
-        <p class="page-subtitle">里程碑、进度更新与成果一体化管理</p>
+        <h2 class="page-title">合作项目进展</h2>
+        <p class="page-subtitle">查看你已确认加入的项目里程碑与进度更新</p>
       </div>
     </div>
 
@@ -37,7 +37,7 @@
           </template>
           <el-empty v-if="!selectedId" description="请选择左侧项目" />
           <div v-else class="cp-section">
-            <el-empty v-if="!milestones.length" description="暂无里程碑，可在下方添加" />
+            <el-empty v-if="!milestones.length" description="暂无里程碑" />
             <el-scrollbar v-else class="cp-scroll" style="padding-right: 6px;">
               <el-timeline>
                 <el-timeline-item
@@ -53,38 +53,11 @@
                         截止 {{ m.due_date.slice(0, 10) }}
                       </span>
                     </div>
-                    <el-button
-                      v-if="m.status !== 'done'"
-                      size="small"
-                      type="primary"
-                      text
-                      @click.stop="markMilestoneDone(m)"
-                    >
-                      标记完成
-                    </el-button>
-                    <span v-else class="pill badge-green">已完成</span>
+                    <span v-if="m.status === 'done'" class="pill badge-green">已完成</span>
                   </div>
                 </el-timeline-item>
               </el-timeline>
             </el-scrollbar>
-
-            <div class="cp-form">
-              <el-input
-                v-model="milestoneTitle"
-                size="small"
-                placeholder="新里程碑标题"
-                style="margin-bottom:6px;"
-              />
-              <el-date-picker
-                v-model="milestoneDueDate"
-                type="date"
-                size="small"
-                placeholder="可选：截止日期"
-                value-format="YYYY-MM-DD"
-                style="width:100%; margin-bottom:6px;"
-              />
-              <el-button type="primary" plain size="small" style="width:100%;" @click="addMilestone">添加里程碑</el-button>
-            </div>
           </div>
         </el-card>
       </el-col>
@@ -117,7 +90,7 @@
                 v-model="updateContent"
                 type="textarea"
                 :rows="3"
-                placeholder="记录阶段性进展、遇到的问题与下一步计划"
+                placeholder="记录你的进展、遇到的问题与下一步计划"
               />
               <el-button
                 type="primary"
@@ -144,9 +117,7 @@ const projects = ref<any[]>([]);
 const selectedId = ref<number | null>(null);
 const milestones = ref<any[]>([]);
 const updates = ref<any[]>([]);
-const milestoneTitle = ref("");
 const updateContent = ref("");
-const milestoneDueDate = ref("");
 
 
 async function loadProjects() {
@@ -173,27 +144,6 @@ async function loadDetails() {
 function select(id: number) {
   selectedId.value = id;
   loadDetails();
-}
-
-
-async function addMilestone() {
-  if (!selectedId.value || !milestoneTitle.value) return;
-  await axios.post(`/api/projects/${selectedId.value}/milestones`, {
-    title: milestoneTitle.value,
-    due_date: milestoneDueDate.value || null
-  });
-  milestoneTitle.value = "";
-  milestoneDueDate.value = "";
-  await loadDetails();
-}
-
-
-async function markMilestoneDone(m: any) {
-  if (!selectedId.value) return;
-  await axios.put(`/api/projects/${selectedId.value}/milestones/${m.id}`, {
-    status: "done"
-  });
-  await loadDetails();
 }
 
 

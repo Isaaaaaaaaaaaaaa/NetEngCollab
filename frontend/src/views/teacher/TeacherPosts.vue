@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div class="page tp-page">
     <div class="page-header">
       <div>
         <h2 class="page-title">项目与竞赛管理</h2>
@@ -19,17 +19,17 @@
 
     <div v-if="hint" style="font-size: 11px; color: #16a34a; margin-top: 6px;">已发布</div>
 
-    <el-row :gutter="16" style="margin-top: 6px;">
+    <el-row :gutter="16" class="tp-main" style="margin-top: 6px;">
       <el-col :xs="24" :lg="7">
-        <el-card class="app-card" shadow="never">
+        <el-card class="app-card tp-card" shadow="never">
           <template #header>
             <div class="page-subtitle">我的项目</div>
           </template>
           <el-empty v-if="!posts.length" description="暂无记录" />
-          <el-scrollbar v-else style="max-height: 320px;">
+          <el-scrollbar v-else class="tp-scroll">
             <ul style="list-style:none; padding:0; margin:0; font-size:12px; color:var(--app-text);">
               <li
-                v-for="p in posts"
+                v-for="p in pagedPosts"
                 :key="p.id"
                 style="padding:6px 8px; border-radius:8px; cursor:pointer; display:flex; flex-direction:column; gap:2px;"
                 :style="p.id === selectedId ? 'background:#eff4ff;' : 'background:transparent;'"
@@ -47,67 +47,79 @@
               </li>
             </ul>
           </el-scrollbar>
+
+          <div v-if="posts.length > postsPageSize" style="margin-top: 8px; text-align:right; flex: 0 0 auto;">
+            <el-pagination
+              background
+              layout="prev, pager, next"
+              :current-page="postsPage"
+              :page-size="postsPageSize"
+              :total="posts.length"
+              @current-change="handlePostsPageChange"
+            />
+          </div>
         </el-card>
       </el-col>
 
       <el-col :xs="24" :lg="17">
-        <el-row :gutter="12">
-          <el-col :xs="24" :lg="14">
-            <el-card class="app-card" shadow="never">
-              <template #header>
-                <div class="page-subtitle">项目详情</div>
-              </template>
-              <div v-if="!selectedPost" style="font-size:12px; color:var(--app-muted);">
-                在左侧列表中选择一个项目查看详细信息。
-              </div>
-              <div v-else style="font-size:13px; display:flex; flex-direction:column; gap:6px;">
-                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-                  <div style="font-size:15px; font-weight:600;" class="truncate">{{ selectedPost.title }}</div>
-                  <el-button size="small" type="primary" text @click="openEdit(selectedPost)">编辑</el-button>
-                </div>
-                <div>
-                  类型：
-                  <span class="pill" :class="selectedPost.post_type === 'competition' ? 'badge-amber' : 'badge-blue'">
-                    {{ typeLabel(selectedPost.post_type) }}
-                  </span>
-                </div>
-                <div>简介：{{ selectedPost.content }}</div>
-                <div>
-                  技术栈：
-                  <span v-if="!selectedPost.tech_stack?.length" style="color:var(--app-muted);">未设置</span>
-                </div>
-                <div v-if="selectedPost.tech_stack?.length" style="display:flex; flex-wrap:wrap; gap:4px;">
-                  <span v-for="t in selectedPost.tech_stack" :key="t" class="tag">{{ t }}</span>
-                  <span v-for="t in selectedPost.tags" :key="t" class="tag">{{ t }}</span>
-                </div>
-                <div>招募人数：{{ selectedPost.recruit_count || '未设置' }}</div>
-                <div>项目周期：{{ selectedPost.duration || '未设置' }}</div>
-                <div>预期成果与要求：{{ selectedPost.outcome || '未填写' }}</div>
-                <div>联系方式：{{ selectedPost.contact || '未填写' }}</div>
-                <div>
-                  报名截止时间：
-                  {{ selectedPost.deadline ? selectedPost.deadline.slice(0, 10) : '未设置' }}
-                </div>
-              </div>
-            </el-card>
-          </el-col>
+        <el-card class="app-card tp-card" shadow="never">
+          <template #header>
+            <div class="page-subtitle">项目详情</div>
+          </template>
 
-          <el-col :xs="24" :lg="10">
-            <el-card class="app-card" shadow="never">
-              <template #header>
+          <div v-if="!selectedPost" style="font-size:12px; color:var(--app-muted);">
+            在左侧列表中选择一个项目查看详细信息。
+          </div>
+
+          <div v-else class="detail-body">
+            <div class="detail-top">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                <div style="font-size:15px; font-weight:600;" class="truncate">{{ selectedPost.title }}</div>
+                <el-button size="small" type="primary" text @click="openEdit(selectedPost)">编辑</el-button>
+              </div>
+              <div>
+                类型：
+                <span class="pill" :class="selectedPost.post_type === 'competition' ? 'badge-amber' : 'badge-blue'">
+                  {{ typeLabel(selectedPost.post_type) }}
+                </span>
+              </div>
+              <div class="detail-line">简介：{{ selectedPost.content }}</div>
+              <div>
+                技术栈：
+                <span v-if="!selectedPost.tech_stack?.length" style="color:var(--app-muted);">未设置</span>
+              </div>
+              <div v-if="selectedPost.tech_stack?.length" style="display:flex; flex-wrap:wrap; gap:4px;">
+                <span v-for="t in selectedPost.tech_stack" :key="t" class="tag">{{ t }}</span>
+                <span v-for="t in selectedPost.tags" :key="t" class="tag">{{ t }}</span>
+              </div>
+              <div>招募人数：{{ selectedPost.recruit_count || '未设置' }}</div>
+              <div>项目周期：{{ selectedPost.duration || '未设置' }}</div>
+              <div>预期成果与要求：{{ selectedPost.outcome || '未填写' }}</div>
+              <div>联系方式：{{ selectedPost.contact || '未填写' }}</div>
+              <div>
+                报名截止时间：
+                {{ selectedPost.deadline ? selectedPost.deadline.slice(0, 10) : '未设置' }}
+              </div>
+            </div>
+
+            <el-divider style="margin: 12px 0;" />
+
+            <div class="students-wrap">
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
                 <div class="page-subtitle">选择该项目的学生</div>
-              </template>
+                <div style="font-size: 12px; color: var(--app-muted);">共 {{ selectedStudents.length }} 条</div>
+              </div>
               <el-empty v-if="!selectedStudents.length" description="暂无学生选择该项目" />
-              <el-scrollbar v-else style="max-height: 260px;">
-                <ul style="list-style:none; padding:0; margin:0; font-size:12px; color:var(--app-text);">
+              <el-scrollbar v-else class="tp-scroll">
+                <ul style="list-style:none; padding:0; margin:0; font-size:12px; color:var(--app-text); padding-right:6px;">
                   <li
-                    v-for="r in selectedStudents"
+                    v-for="r in pagedSelectedStudents"
                     :key="r.id"
-                    style="padding:4px 0; border-bottom:1px solid rgba(148,163,184,0.25);"
+                    style="padding:6px 0; border-bottom:1px solid rgba(148,163,184,0.25);"
                   >
-                    <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
-                      <span class="truncate" style="max-width:130px;">{{ r.student?.display_name || '学生' }}</span>
-                      <div style="display:flex; align-items:center; gap:4px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                      <span class="truncate" style="max-width:240px;">{{ r.student?.display_name || '学生' }}</span>
+                      <div class="stu-actions">
                         <span class="pill" :class="statusClass(r)" style="font-size:11px;">
                           {{ statusLabel(r) }}
                         </span>
@@ -125,9 +137,20 @@
                   </li>
                 </ul>
               </el-scrollbar>
-            </el-card>
-          </el-col>
-        </el-row>
+
+              <div v-if="selectedStudents.length > selectedStudentsPageSize" style="text-align:right; margin-top: 8px; flex: 0 0 auto;">
+                <el-pagination
+                  background
+                  layout="prev, pager, next"
+                  :current-page="selectedStudentsPage"
+                  :page-size="selectedStudentsPageSize"
+                  :total="selectedStudents.length"
+                  @current-change="handleSelectedStudentsPageChange"
+                />
+              </div>
+            </div>
+          </div>
+        </el-card>
       </el-col>
     </el-row>
 
@@ -268,6 +291,10 @@ const editAttachmentName = ref("");
 const selectedId = ref<number | null>(null);
 const selectedStudents = ref<any[]>([]);
 const requestSummary = reactive<Record<number, { count: number }>>({});
+const postsPage = ref(1);
+const postsPageSize = 6;
+const selectedStudentsPage = ref(1);
+const selectedStudentsPageSize = 6;
 
 const form = reactive({
   post_type: "project",
@@ -300,6 +327,16 @@ const editForm = reactive({
 
 
 const selectedPost = computed(() => posts.value.find(p => p.id === selectedId.value) || null);
+
+const pagedPosts = computed(() => {
+  const start = (postsPage.value - 1) * postsPageSize;
+  return (posts.value || []).slice(start, start + postsPageSize);
+});
+
+const pagedSelectedStudents = computed(() => {
+  const start = (selectedStudentsPage.value - 1) * selectedStudentsPageSize;
+  return (selectedStudents.value || []).slice(start, start + selectedStudentsPageSize);
+});
 
 
 function typeLabel(t: string) {
@@ -358,7 +395,9 @@ async function load() {
   if (posts.value.length && !selectedId.value) {
     selectedId.value = posts.value[0].id;
   }
-  await loadRequests();
+  postsPage.value = 1;
+  await loadRequestSummary();
+  await loadRequestsForSelected();
 }
 
 
@@ -441,7 +480,23 @@ async function saveEdit() {
 }
 
 
-async function loadRequests() {
+async function loadRequestSummary() {
+  const resp = await axios.get("/api/cooperation/requests");
+  const items = resp.data.items || [];
+  Object.keys(requestSummary).forEach(k => delete requestSummary[Number(k)]);
+  items.forEach((r: any) => {
+    const pid = r.post?.id;
+    if (!pid) return;
+    if (r.teacher_status !== "accepted") return;
+    if (!requestSummary[pid]) {
+      requestSummary[pid] = { count: 0 };
+    }
+    requestSummary[pid].count += 1;
+  });
+}
+
+
+async function loadRequestsForSelected() {
   if (!selectedId.value) {
     selectedStudents.value = [];
     return;
@@ -451,21 +506,27 @@ async function loadRequests() {
   });
   const items = resp.data.items || [];
   selectedStudents.value = items;
-  Object.keys(requestSummary).forEach(k => delete requestSummary[Number(k)]);
-  items.forEach((r: any) => {
-    const pid = r.post?.id;
-    if (!pid) return;
-    if (!requestSummary[pid]) {
-      requestSummary[pid] = { count: 0 };
-    }
-    requestSummary[pid].count += 1;
-  });
+  selectedStudentsPage.value = 1;
 }
 
 
 function selectPost(id: number) {
   selectedId.value = id;
-  loadRequests();
+  const idx = (posts.value || []).findIndex((p: any) => p.id === id);
+  if (idx >= 0) {
+    postsPage.value = Math.floor(idx / postsPageSize) + 1;
+  }
+  loadRequestsForSelected();
+}
+
+
+function handlePostsPageChange(p: number) {
+  postsPage.value = p;
+}
+
+
+function handleSelectedStudentsPageChange(p: number) {
+  selectedStudentsPage.value = p;
 }
 
 
@@ -490,7 +551,8 @@ function statusClass(r: any) {
 
 async function acceptStudent(r: any) {
   await axios.post(`/api/cooperation/requests/${r.id}/respond`, { action: "accept" });
-  await loadRequests();
+  await loadRequestSummary();
+  await loadRequestsForSelected();
 }
 
 
@@ -498,3 +560,85 @@ onMounted(() => {
   load();
 });
 </script>
+
+<style scoped>
+.tp-page {
+  height: calc(100vh - 160px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tp-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.tp-main :deep(.el-col) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tp-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.tp-card :deep(.el-card__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.tp-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
+}
+
+.detail-top {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.students-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stu-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

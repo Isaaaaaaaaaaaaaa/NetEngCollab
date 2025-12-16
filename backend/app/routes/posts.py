@@ -8,6 +8,8 @@ from sqlalchemy import func
 from ..extensions import db
 from ..models import (
     Comment,
+    CooperationRequest,
+    CooperationStatus,
     Reaction,
     ReviewStatus,
     Role,
@@ -52,22 +54,27 @@ def list_teacher_posts():
 
     like_only = (request.args.get("like_only") or "").strip() in {"1", "true", "yes"}
     favorite_only = (request.args.get("favorite_only") or "").strip() in {"1", "true", "yes"}
+    joined_only = (request.args.get("joined_only") or "").strip() in {"1", "true", "yes"}
     page = max(int(request.args.get("page", 1)), 1)
     page_size = int(request.args.get("page_size", 20))
     if page_size <= 0 or page_size > 100:
         page_size = 20
 
     post_type = request.args.get("post_type")
+    teacher_user_id = request.args.get("teacher_user_id")
     keyword = (request.args.get("keyword") or "").strip()
     tag = (request.args.get("tag") or "").strip()
     tech = (request.args.get("tech") or "").strip()
 
     if post_type:
         q = q.filter_by(post_type=post_type)
+    if teacher_user_id and str(teacher_user_id).isdigit():
+        q = q.filter_by(teacher_user_id=int(teacher_user_id))
     if keyword:
         q = q.filter(TeacherPost.title.contains(keyword) | TeacherPost.content.contains(keyword))
 
-    if like_only or favorite_only:
+    viewer_id = None
+    if like_only or favorite_only or joined_only:
         if not request.headers.get("Authorization"):
             return jsonify({"message": "未登录"}), 401
         try:
@@ -80,6 +87,21 @@ def list_teacher_posts():
         if not viewer_id:
             return jsonify({"message": "未登录"}), 401
 
+    if joined_only:
+        reqs = (
+            CooperationRequest.query.filter_by(
+                student_user_id=viewer_id,
+                final_status=CooperationStatus.confirmed.value,
+            )
+            .order_by(CooperationRequest.created_at.desc())
+            .all()
+        )
+        joined_ids = [int(r.post_id) for r in reqs if r.post_id]
+        if not joined_ids:
+            return jsonify({"items": [], "total": 0, "page": page, "page_size": page_size})
+        q = q.filter(TeacherPost.id.in_(joined_ids))
+
+    if like_only or favorite_only:
         reaction_type = "like" if like_only else "favorite"
         ids = [
             r.target_id
@@ -223,32 +245,50 @@ def update_teacher_post(post_id: int):
 @bp.get("/students")
 def list_students():
     viewer_role = _viewer_role()
-    q = StudentProfile.query
     direction = (request.args.get("direction") or "").strip()
+    major = (request.args.get("major") or "").strip()
+    grade = (request.args.get("grade") or "").strip()
     skill = (request.args.get("skill") or "").strip()
     keyword = (request.args.get("keyword") or "").strip()
 
-    profiles = q.limit(500).all()
+    rows = (
+        db.session.query(User, StudentProfile)
+        .outerjoin(StudentProfile, StudentProfile.user_id == User.id)
+        .filter(User.is_active == True)
+        .filter(User.role == Role.student.value)
+        .order_by(User.id.asc())
+        .limit(2000)
+        .all()
+    )
     items = []
-    for p in profiles:
-        if not _can_view_visibility(p.visibility, viewer_role):
-            continue
-        user = User.query.get(p.user_id)
-        if not user or not user.is_active or user.role != Role.student.value:
+    for user, p in rows:
+        visibility = p.visibility if p else Visibility.public.value
+        if not _can_view_visibility(visibility, viewer_role):
             continue
 
-        skills = json_loads(p.skills_json, [])
-        interests = json_loads(p.interests_json, [])
-        experiences = json_loads(p.experiences_json or "[]", [])
-        if direction and (p.direction or "") != direction:
+        skills = json_loads(p.skills_json, []) if p else []
+        interests = json_loads(p.interests_json, []) if p else []
+        experiences = json_loads(p.experiences_json or "[]", []) if p else []
+        project_links = json_loads(p.project_links_json, []) if p else []
+
+        if direction and p and (p.direction or "") != direction:
             continue
-        if skill and skill not in [s.get("name") for s in skills if isinstance(s, dict)]:
+        if major and major not in (((p.major or "") if p else "")):
             continue
+        if grade and ((p.grade or "") if p else "") != grade:
+            continue
+        if skill:
+            names = [s.get("name") for s in skills if isinstance(s, dict) and s.get("name")]
+            if skill not in names:
+                continue
         if keyword:
             text = " ".join(
                 [
                     user.display_name or "",
-                    p.direction or "",
+                    (p.major or "") if p else "",
+                    (p.grade or "") if p else "",
+                    (p.class_name or "") if p else "",
+                    (p.direction or "") if p else "",
                     json.dumps(skills, ensure_ascii=False),
                     json.dumps(interests, ensure_ascii=False),
                 ]
@@ -262,15 +302,19 @@ def list_students():
                     "id": user.id,
                     "display_name": user.display_name,
                 },
-                "direction": p.direction,
+                "major": (p.major if p else None),
+                "grade": (p.grade if p else None),
+                "class_name": (p.class_name if p else None),
+                "direction": (p.direction if p else None),
                 "skills": skills,
                 "interests": interests,
+                "project_links": project_links,
                 "experiences": experiences,
-                "weekly_hours": p.weekly_hours,
-                "prefer_local": p.prefer_local,
-                "accept_cross": p.accept_cross,
-                "visibility": p.visibility,
-                "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+                "weekly_hours": (p.weekly_hours if p else None),
+                "prefer_local": (p.prefer_local if p else False),
+                "accept_cross": (p.accept_cross if p else True),
+                "visibility": visibility,
+                "updated_at": p.updated_at.isoformat() if p and p.updated_at else None,
             }
         )
     return jsonify({"items": items})
@@ -287,6 +331,9 @@ def get_my_student_profile():
         return jsonify({"message": "未创建"}), 404
     return jsonify(
         {
+            "major": p.major,
+            "grade": p.grade,
+            "class_name": p.class_name,
             "direction": p.direction,
             "skills": json_loads(p.skills_json, []),
             "project_links": json_loads(p.project_links_json, []),
@@ -312,6 +359,9 @@ def upsert_my_student_profile():
         p = StudentProfile(user_id=user.id)
         db.session.add(p)
 
+    p.major = (data.get("major") or None)
+    p.grade = (data.get("grade") or None)
+    p.class_name = (data.get("class_name") or None)
     p.direction = (data.get("direction") or None)
     p.skills_json = json_dumps(data.get("skills") or [])
     p.project_links_json = json_dumps(data.get("project_links") or [])

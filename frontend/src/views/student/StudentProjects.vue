@@ -10,7 +10,12 @@
           <el-radio-button label="all">全部</el-radio-button>
           <el-radio-button label="liked">我点赞的</el-radio-button>
           <el-radio-button label="favorited">我收藏的</el-radio-button>
+          <el-radio-button label="joined">我加入的</el-radio-button>
         </el-radio-group>
+        <el-select v-model="filters.teacherId" size="small" clearable placeholder="按教师筛选" style="width: 160px;">
+          <el-option label="全部教师" value="" />
+          <el-option v-for="t in teacherOptions" :key="t.id" :label="t.display_name" :value="t.id" />
+        </el-select>
         <el-input
           v-model="filters.keyword"
           size="small"
@@ -28,15 +33,16 @@
           <template #header>
             <div class="page-subtitle">项目列表</div>
           </template>
+          <el-empty v-if="!posts.length" description="暂无项目" />
           <el-table
-            :data="postsDisplay"
+            v-else
+            :data="posts"
             size="small"
             border
             style="width: 100%;"
           >
             <el-table-column prop="title" label="项目" min-width="200">
               <template #default="scope">
-                <div v-if="scope.row.__placeholder" style="font-size:12px; color:var(--app-muted);">暂无</div>
                 <div style="display: flex; flex-direction: column; gap: 2px;">
                   <span style="font-size: 13px; font-weight: 500;" class="truncate">{{ scope.row.title }}</span>
                   <span style="font-size: 11px; color: var(--app-muted);" class="truncate">{{ scope.row.content }}</span>
@@ -45,7 +51,6 @@
             </el-table-column>
             <el-table-column label="类型" width="90" align="center">
               <template #default="scope">
-                <span v-if="scope.row.__placeholder" style="font-size:12px; color:var(--app-muted);">-</span>
                 <span class="pill" :class="scope.row.post_type === 'competition' ? 'badge-amber' : 'badge-blue'">
                   {{ typeLabel(scope.row.post_type) }}
                 </span>
@@ -53,7 +58,6 @@
             </el-table-column>
             <el-table-column label="技术栈" min-width="140">
               <template #default="scope">
-                <span v-if="scope.row.__placeholder" style="font-size:12px; color:var(--app-muted);">-</span>
                 <div style="display: flex; flex-wrap: wrap; gap: 4px;">
                   <span v-for="t in scope.row.tech_stack" :key="t" class="tag">{{ t }}</span>
                   <span v-for="t in scope.row.tags" :key="t" class="tag">{{ t }}</span>
@@ -62,13 +66,11 @@
             </el-table-column>
             <el-table-column label="招募人数" width="90" align="center">
               <template #default="scope">
-                <span v-if="scope.row.__placeholder" style="font-size:12px; color:var(--app-muted);">-</span>
                 <span style="font-size: 12px;">{{ scope.row.recruit_count || "未设置" }}</span>
               </template>
             </el-table-column>
             <el-table-column label="周期/截止" min-width="120" align="center">
               <template #default="scope">
-                <span v-if="scope.row.__placeholder" style="font-size:12px; color:var(--app-muted);">-</span>
                 <div style="display:flex; flex-direction:column; gap:2px;">
                   <span style="font-size:12px;">{{ scope.row.duration || "周期未设定" }}</span>
                   <span style="font-size:11px; color:var(--app-muted);">
@@ -79,7 +81,6 @@
             </el-table-column>
             <el-table-column label="教师" width="120" align="center">
               <template #default="scope">
-                <span v-if="scope.row.__placeholder" style="font-size: 12px; color:var(--app-muted);">-</span>
                 <el-link
                   v-if="scope.row.teacher"
                   type="primary"
@@ -94,7 +95,6 @@
             </el-table-column>
             <el-table-column label="我的状态" width="110" align="center">
               <template #default="scope">
-                <span v-if="scope.row.__placeholder" style="font-size: 11px; color: var(--app-muted);">-</span>
                 <span
                   v-if="requestStatus[scope.row.id]"
                   class="pill"
@@ -109,13 +109,11 @@
             <el-table-column label="互动" width="220" align="right">
               <template #default="scope">
                 <InteractionsPanel
-                  v-if="!scope.row.__placeholder"
                   :target-type="'teacher_post'"
                   :target-id="scope.row.id"
                   :enable-comments="false"
                   @changed="handleInteractionChanged"
                 />
-                <span v-else style="font-size: 11px; color: var(--app-muted);">-</span>
               </template>
             </el-table-column>
             <el-table-column label="操作" min-width="120" align="right" fixed="right">
@@ -124,7 +122,7 @@
                   size="small"
                   type="primary"
                   text
-                  :disabled="scope.row.__placeholder || (!!requestStatus[scope.row.id] && requestStatus[scope.row.id].final_status !== 'rejected')"
+                  :disabled="!!requestStatus[scope.row.id]"
                   @click="apply(scope.row)"
                 >
                   申请加入
@@ -149,22 +147,22 @@
         <div class="proj-right">
           <el-card class="app-card proj-card proj-card-match" shadow="never">
             <template #header>
-              <div class="page-subtitle">智能匹配推荐 TOP10</div>
+              <div class="page-subtitle">智能匹配推荐 TOP5</div>
             </template>
-            <ul class="top10-list">
+            <ul v-if="matched.length" class="top10-list">
               <li
-                v-for="(p, idx) in matchedDisplay"
+                v-for="(p, idx) in matched.slice(0, 10)"
                 :key="p.id"
                 class="top10-item"
-                :class="idx === matchedDisplay.length - 1 ? 'is-last' : ''"
+                :class="idx === Math.min(matched.length, 10) - 1 ? 'is-last' : ''"
               >
                 <span class="truncate" style="max-width: 180px; color: var(--app-text);">
-                  {{ p.__placeholder ? "暂无推荐" : p.title }}
+                  {{ p.title }}
                 </span>
-                <span v-if="!p.__placeholder" class="pill badge-green">匹配度 {{ Math.round(p.score * 100) }}%</span>
-                <span v-else style="font-size: 11px; color: var(--app-muted);">-</span>
+                <span class="pill badge-green">匹配度 {{ Math.round(p.score * 100) }}%</span>
               </li>
             </ul>
+            <el-empty v-else description="暂无推荐" />
           </el-card>
         </div>
       </el-col>
@@ -181,30 +179,14 @@ import InteractionsPanel from "../../components/InteractionsPanel.vue";
 
 const posts = ref<any[]>([]);
 const matched = ref<any[]>([]);
-const filters = reactive({ keyword: "" });
+const filters = reactive({ keyword: "", teacherId: "" as any });
 const requestStatus = reactive<Record<number, any>>({});
 const router = useRouter();
-const reactFilter = ref<"all" | "liked" | "favorited">("all");
+const reactFilter = ref<"all" | "liked" | "favorited" | "joined">("all");
 const page = ref(1);
 const pageSize = ref(5);
 const total = ref(0);
-
-const postsDisplay = computed(() => {
-  const out: any[] = (posts.value || []).map((p: any) => ({ ...p, __placeholder: false }));
-  const target = pageSize.value;
-  for (let i = out.length; i < target; i++) {
-    out.push({ id: -1 * (page.value * 100 + i + 1), __placeholder: true });
-  }
-  return out;
-});
-
-const matchedDisplay = computed(() => {
-  const out: any[] = (matched.value || []).slice(0, 10).map((p: any) => ({ ...p, __placeholder: false }));
-  for (let i = out.length; i < 10; i++) {
-    out.push({ id: `ph-${i}`, __placeholder: true });
-  }
-  return out;
-});
+const teacherOptions = ref<any[]>([]);
 
 
 function typeLabel(t: string) {
@@ -218,14 +200,41 @@ async function loadPosts() {
   const resp = await axios.get("/api/teacher-posts", {
     params: {
       keyword: filters.keyword || undefined,
+      teacher_user_id: filters.teacherId || undefined,
       like_only: reactFilter.value === "liked" ? 1 : undefined,
       favorite_only: reactFilter.value === "favorited" ? 1 : undefined,
+      joined_only: reactFilter.value === "joined" ? 1 : undefined,
       page: page.value,
       page_size: pageSize.value
     }
   });
   posts.value = resp.data.items;
   total.value = resp.data.total || 0;
+  const map = new Map<number, any>();
+  (teacherOptions.value || []).forEach((t: any) => {
+    if (t && t.id) map.set(Number(t.id), t);
+  });
+  (posts.value || []).forEach((p: any) => {
+    if (p.teacher && p.teacher.id) {
+      map.set(Number(p.teacher.id), { id: Number(p.teacher.id), display_name: p.teacher.display_name });
+    }
+  });
+  teacherOptions.value = Array.from(map.values()).sort((a: any, b: any) => (a.display_name || "").localeCompare(b.display_name || ""));
+}
+
+
+async function loadTeacherOptions() {
+  try {
+    const resp = await axios.get("/api/teacher-posts", { params: { page: 1, page_size: 100 } });
+    const map = new Map<number, any>();
+    (resp.data.items || []).forEach((p: any) => {
+      if (p.teacher && p.teacher.id) {
+        map.set(Number(p.teacher.id), { id: Number(p.teacher.id), display_name: p.teacher.display_name });
+      }
+    });
+    teacherOptions.value = Array.from(map.values()).sort((a: any, b: any) => (a.display_name || "").localeCompare(b.display_name || ""));
+  } catch (e) {
+  }
 }
 
 
@@ -307,6 +316,7 @@ async function chat(p: any) {
 
 
 onMounted(() => {
+  loadTeacherOptions();
   loadPosts();
   loadMatch();
   loadMyRequests();
@@ -317,6 +327,15 @@ watch(reactFilter, () => {
   page.value = 1;
   loadPosts();
 });
+
+
+watch(
+  () => filters.teacherId,
+  () => {
+    page.value = 1;
+    loadPosts();
+  }
+);
 </script>
 
 <style scoped>

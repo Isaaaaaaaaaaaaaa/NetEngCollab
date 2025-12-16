@@ -28,25 +28,25 @@
           <template #header>
             <div class="page-subtitle">话题列表</div>
           </template>
-          <el-scrollbar class="split-scroll">
+          <el-empty v-if="!topics.length" description="暂无话题" />
+          <el-scrollbar v-else class="split-scroll">
             <ul style="list-style:none; padding:0; margin:0; font-size:12px; color:var(--app-text);">
               <li
-                v-for="t in topicsDisplay"
+                v-for="t in topics"
                 :key="t.id"
                 style="padding:8px 0; border-bottom:1px solid rgba(148,163,184,0.25);"
                 >
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
-                  <span class="truncate" style="max-width:220px; font-weight:500;">{{ t.__placeholder ? "暂无" : t.title }}</span>
-                  <span v-if="!t.__placeholder" class="pill badge-blue" style="font-size:10px;">{{ t.category }}</span>
-                  <span v-else style="font-size:11px; color:var(--app-muted);">-</span>
+                  <span class="truncate" style="max-width:220px; font-weight:500;">{{ t.title }}</span>
+                  <span class="pill badge-blue" style="font-size:10px;">{{ t.category }}</span>
                 </div>
                 <div style="font-size:12px; color:var(--app-muted); margin-bottom:4px;" class="truncate">
-                  {{ t.__placeholder ? "-" : t.content }}
+                  {{ t.content }}
                 </div>
-                <div v-if="!t.__placeholder" style="display:flex; flex-wrap:wrap; gap:4px;">
+                <div style="display:flex; flex-wrap:wrap; gap:4px;">
                   <span v-for="tag in t.tags" :key="tag" class="tag">{{ tag }}</span>
                 </div>
-                <div v-if="!t.__placeholder" style="margin-top:4px;">
+                <div style="margin-top:4px;">
                   <InteractionsPanel :target-type="'forum_topic'" :target-id="t.id" />
                 </div>
               </li>
@@ -108,7 +108,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { onMounted, reactive, ref, watch } from "vue";
 import axios from "axios";
 import InteractionsPanel from "../../components/InteractionsPanel.vue";
 
@@ -124,16 +124,6 @@ const form = reactive({
   title: "",
   content: "",
   tags: ""
-});
-
-
-const topicsDisplay = computed(() => {
-  const out: any[] = (topics.value || []).map((t: any) => ({ ...t, __placeholder: false }));
-  const target = pageSize.value;
-  for (let i = out.length; i < target; i++) {
-    out.push({ id: `ph-${page.value}-${i}`, __placeholder: true });
-  }
-  return out;
 });
 
 

@@ -1,11 +1,17 @@
 <template>
-  <div class="page">
+  <div class="page ts-page">
     <div class="page-header">
       <div>
         <h2 class="page-title">学生画像与匹配</h2>
-        <p class="page-subtitle">按方向、技能和关键词筛选学生，快速找到合适的合作伙伴</p>
+        <p class="page-subtitle">按专业、技能和关键词筛选学生，快速找到合适的合作伙伴</p>
       </div>
       <el-space :size="8">
+        <el-select v-model="filters.grade" size="small" clearable placeholder="年级" style="width: 120px;">
+          <el-option label="大一" value="大一" />
+          <el-option label="大二" value="大二" />
+          <el-option label="大三" value="大三" />
+          <el-option label="大四" value="大四" />
+        </el-select>
         <el-input
           v-model="filters.keyword"
           size="small"
@@ -17,93 +23,150 @@
       </el-space>
     </div>
 
-    <el-row :gutter="16" style="margin-top: 6px;">
+    <el-row :gutter="16" class="ts-main" style="margin-top: 6px;">
       <el-col :xs="24" :lg="14">
-        <el-card class="app-card" shadow="never">
+        <el-card class="app-card ts-card" shadow="never">
           <template #header>
             <div class="page-subtitle">学生列表</div>
           </template>
           <el-empty v-if="!students.length" description="暂无学生记录" />
-          <el-table
-            v-else
-            :data="pagedStudents"
-            size="small"
-            border
-            @row-click="select"
-            style="cursor:pointer;"
-          >
-            <el-table-column label="姓名" min-width="120">
-              <template #default="scope">
-                <span style="font-size:13px; font-weight:500;">{{ scope.row.user.display_name }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="方向" min-width="120">
-              <template #default="scope">
-                <span style="font-size:12px;">{{ scope.row.direction || '未填写' }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="技能" min-width="150">
-              <template #default="scope">
-                <div style="display:flex; flex-wrap:wrap; gap:4px;">
-                  <span v-for="sk in scope.row.skills" :key="sk.name" class="tag">{{ sk.name }} · {{ sk.level }}</span>
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="每周时间" width="100" align="center">
-              <template #default="scope">
-                <span v-if="scope.row.weekly_hours" style="font-size:12px;">每周 {{ scope.row.weekly_hours }} 小时</span>
-                <span v-else style="font-size:12px; color:var(--app-muted);">未填写</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="推荐度" width="110" align="center">
-              <template #default="scope">
-                <span v-if="recommendScores[scope.row.user.id]" class="pill badge-green" style="font-size:11px;">
-                  匹配 {{ Math.round(recommendScores[scope.row.user.id] * 100) }}%
-                </span>
-                <span v-else style="font-size:11px; color:var(--app-muted);">无</span>
-              </template>
-            </el-table-column>
-          </el-table>
-          <div v-if="totalStudents > pageSize" style="margin-top:8px; text-align:right;">
-            <el-pagination
-              background
-              layout="prev, pager, next"
-              :current-page="page"
-              :page-size="pageSize"
-              :total="totalStudents"
-              @current-change="handlePageChange"
-            />
+          <div v-else class="list-wrap">
+            <div class="table-wrap">
+              <el-table
+                :data="pagedStudents"
+                size="small"
+                border
+                @row-click="select"
+                style="cursor:pointer; height:100%;"
+              >
+                <el-table-column label="姓名" min-width="120">
+                  <template #default="scope">
+                    <span style="font-size:13px; font-weight:500;">{{ scope.row.user.display_name }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="年级" width="90" align="center">
+                  <template #default="scope">
+                    <span style="font-size:12px;">{{ scope.row.grade || '未填写' }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="技能" min-width="150">
+                  <template #default="scope">
+                    <div style="display:flex; flex-wrap:wrap; gap:4px;">
+                      <span v-for="sk in scope.row.skills" :key="sk.name" class="tag">{{ sk.name }} · {{ sk.level }}</span>
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="每周时间" width="100" align="center">
+                  <template #default="scope">
+                    <span v-if="scope.row.weekly_hours" style="font-size:12px;">每周 {{ scope.row.weekly_hours }} 小时</span>
+                    <span v-else style="font-size:12px; color:var(--app-muted);">未填写</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="推荐度" width="110" align="center">
+                  <template #default="scope">
+                    <span v-if="recommendScores[scope.row.user.id]" class="pill badge-green" style="font-size:11px;">
+                      匹配 {{ Math.round(recommendScores[scope.row.user.id] * 100) }}%
+                    </span>
+                    <span v-else style="font-size:11px; color:var(--app-muted);">无</span>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+            <div v-if="totalStudents > pageSize" class="pager">
+              <el-pagination
+                background
+                layout="prev, pager, next"
+                :current-page="page"
+                :page-size="pageSize"
+                :total="totalStudents"
+                @current-change="handlePageChange"
+              />
+            </div>
           </div>
         </el-card>
       </el-col>
 
-      <el-col :xs="24" :lg="10">
-        <el-card class="app-card" shadow="never">
+          <el-col :xs="24" :lg="10">
+        <el-card class="app-card ts-card" shadow="never">
           <template #header>
             <div class="page-subtitle">学生详情</div>
           </template>
           <div v-if="!selectedStudent" style="font-size:12px; color:var(--app-muted);">
             在左侧表格中选择一名学生查看详细画像。
           </div>
-          <div v-else style="display:flex; flex-direction:column; gap:8px; font-size:13px;">
+          <el-scrollbar v-else class="detail-scroll">
+            <div style="display:flex; flex-direction:column; gap:10px; font-size:13px; padding-right:6px;">
             <div style="display:flex; align-items:center; justify-content:space-between;">
-              <div style="font-size:15px; font-weight:600;">{{ selectedStudent.user.display_name }}</div>
+              <div>
+                <div style="font-size:15px; font-weight:600;">{{ selectedStudent.user.display_name }}</div>
+              </div>
               <div v-if="selectedStudent.weekly_hours" class="pill badge-green">每周 {{ selectedStudent.weekly_hours }} 小时</div>
             </div>
-            <div>方向：{{ selectedStudent.direction || '未填写' }}</div>
+
+            <div style="display:flex; flex-wrap:wrap; gap:10px; font-size:12px; color:var(--app-text);">
+              <span>专业：{{ selectedStudent.major || '未填写' }}</span>
+              <span>年级：{{ selectedStudent.grade || '未填写' }}</span>
+              <span>班级：{{ selectedStudent.class_name || '未填写' }}</span>
+            </div>
+
             <div>
-              技能：
+              技能标签：
               <span v-if="!selectedStudent.skills.length" style="color:var(--app-muted);">未填写</span>
             </div>
             <div v-if="selectedStudent.skills.length" style="display:flex; flex-wrap:wrap; gap:6px;">
-              <span v-for="sk in selectedStudent.skills" :key="sk.name" class="tag">{{ sk.name }} · {{ sk.level }}</span>
+              <span v-for="sk in selectedStudent.skills" :key="sk.name + sk.level" class="tag">{{ sk.name }} · {{ sk.level }}</span>
             </div>
+
+            <div>
+              兴趣标签：
+              <span v-if="!selectedStudent.interests?.length" style="color:var(--app-muted);">未填写</span>
+            </div>
+            <div v-if="selectedStudent.interests?.length" style="display:flex; flex-wrap:wrap; gap:6px;">
+              <span v-for="tag in selectedStudent.interests" :key="tag" class="tag">{{ tag }}</span>
+            </div>
+
             <div>
               偏好：
               <span>{{ selectedStudent.prefer_local ? '优先本地' : '可远程' }}</span>
               ·
               <span>{{ selectedStudent.accept_cross ? '接受跨方向' : '方向匹配优先' }}</span>
             </div>
+
+            <div>
+              项目链接：
+              <span v-if="!selectedStudent.project_links?.length" style="color:var(--app-muted);">暂无链接</span>
+            </div>
+            <ul v-if="selectedStudent.project_links?.length" style="list-style:none; padding:0; margin:0; font-size:12px; color:var(--app-text);">
+              <li
+                v-for="link in selectedStudent.project_links"
+                :key="link"
+                class="truncate"
+                style="padding:4px 0; border-bottom:1px solid rgba(148,163,184,0.16);"
+              >
+                {{ link }}
+              </li>
+            </ul>
+
+            <div>
+              项目经历：
+              <span v-if="!selectedStudent.experiences?.length" style="color:var(--app-muted);">暂无项目经历</span>
+            </div>
+            <ul v-if="selectedStudent.experiences?.length" style="list-style:none; padding:0; margin:0; font-size:12px; color:var(--app-text);">
+              <li
+                v-for="(exp, idx) in selectedStudent.experiences"
+                :key="idx"
+                style="padding:6px 0; border-bottom:1px solid rgba(148,163,184,0.16);"
+              >
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                  <span class="truncate" style="max-width:220px; font-weight:500;">{{ exp.title || '未命名项目' }}</span>
+                  <span style="font-size:11px; color:var(--app-muted);">{{ exp.time || '' }}</span>
+                </div>
+                <div style="font-size:11px; color:var(--app-muted);">
+                  {{ exp.type || '' }} · {{ exp.outcome || '' }}
+                </div>
+              </li>
+            </ul>
+
             <div style="margin-top:6px;">
               <div style="font-size:12px; color:var(--app-muted); margin-bottom:4px;">选择合作项目并发送邀请</div>
               <el-select
@@ -125,19 +188,23 @@
                   {{ statusLabel(currentRequest) }}
                 </span>
               </div>
+              <div v-if="currentRequest" style="font-size:12px; color:var(--app-muted); margin-bottom:6px;">
+                该项目已向该学生发起过合作流程，无需再次发送邀请。
+              </div>
             </div>
             <div style="margin-top:6px; display:flex; gap:8px;">
               <el-button
                 type="primary"
                 size="small"
-                :disabled="!selectedPostId"
+                :disabled="!selectedPostId || !canInvite"
                 @click="invite(selectedStudent)"
               >
                 发出合作邀请
               </el-button>
               <el-button size="small" @click="chat(selectedStudent)">发私信</el-button>
             </div>
-          </div>
+            </div>
+          </el-scrollbar>
         </el-card>
       </el-col>
     </el-row>
@@ -145,25 +212,30 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import axios from "axios";
 
 
 const students = ref<any[]>([]);
-const filters = reactive({ keyword: "" });
+const filters = reactive({ keyword: "", grade: "" });
 const page = ref(1);
-const pageSize = ref(10);
+const pageSize = ref(4);
 const selectedStudent = ref<any | null>(null);
 const myPosts = ref<any[]>([]);
 const selectedPostId = ref<number | null>(null);
 const currentRequest = ref<any | null>(null);
 const recommendScores = reactive<Record<number, number>>({});
 
+const canInvite = computed(() => {
+  if (!selectedPostId.value) return false;
+  return currentRequest.value == null;
+});
+
 
 async function load() {
   page.value = 1;
   const resp = await axios.get("/api/students", {
-    params: { keyword: filters.keyword || undefined }
+    params: { keyword: filters.keyword || undefined, grade: filters.grade || undefined }
   });
   students.value = resp.data.items;
   if (!selectedStudent.value && students.value.length) {
@@ -215,6 +287,7 @@ function handlePageChange(p: number) {
 
 async function invite(s: any) {
   if (!selectedPostId.value) return;
+  if (!canInvite.value) return;
   await axios.post("/api/cooperation/request", {
     post_id: selectedPostId.value,
     student_user_id: s.user.id
@@ -239,6 +312,11 @@ function select(row: any) {
   selectedStudent.value = row;
   loadCurrentRequest();
 }
+
+
+watch(selectedPostId, () => {
+  loadCurrentRequest();
+});
 
 
 async function loadCurrentRequest() {
@@ -278,3 +356,70 @@ onMounted(() => {
   load();
 });
 </script>
+
+<style scoped>
+.ts-page {
+  height: calc(100vh - 160px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ts-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.ts-main :deep(.el-col) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.ts-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ts-card :deep(.el-card__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.list-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.table-wrap {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.pager {
+  margin-top: 8px;
+  text-align: right;
+  flex: 0 0 auto;
+}
+
+.detail-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

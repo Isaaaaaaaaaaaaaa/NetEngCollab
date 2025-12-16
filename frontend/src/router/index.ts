@@ -8,8 +8,10 @@ const AdminLayout = () => import("../views/admin/AdminLayout.vue");
 const StudentDashboard = () => import("../views/student/StudentDashboard.vue");
 const TeacherDashboard = () => import("../views/teacher/TeacherDashboard.vue");
 const AdminDashboard = () => import("../views/admin/AdminDashboard.vue");
+const AdminAnalytics = () => import("../views/admin/AdminAnalytics.vue");
 const StudentProjects = () => import("../views/student/StudentProjects.vue");
 const StudentProfile = () => import("../views/student/StudentProfile.vue");
+const StudentCooperation = () => import("../views/student/StudentCooperation.vue");
 const TeacherPosts = () => import("../views/teacher/TeacherPosts.vue");
 const TeacherStudents = () => import("../views/teacher/TeacherStudents.vue");
 const TeacherProjects = () => import("../views/teacher/TeacherProjects.vue");
@@ -38,6 +40,7 @@ const routes: RouteRecordRaw[] = [
     children: [
       { path: "dashboard", name: "student-dashboard", component: StudentDashboard },
       { path: "projects", name: "student-projects", component: StudentProjects },
+      { path: "cooperation", name: "student-cooperation", component: StudentCooperation },
       { path: "profile", name: "student-profile", component: StudentProfile },
       { path: "resources", name: "student-resources", component: ResourcesCenter },
       { path: "forum", name: "student-forum", component: ForumView },
@@ -66,6 +69,7 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, role: "admin" },
     children: [
       { path: "dashboard", name: "admin-dashboard", component: AdminDashboard },
+      { path: "analytics", name: "admin-analytics", component: AdminAnalytics },
       { path: "users", name: "admin-users", component: AdminUsers },
       { path: "projects", name: "admin-projects", component: AdminCooperations }
     ]

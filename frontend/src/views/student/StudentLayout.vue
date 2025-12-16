@@ -18,6 +18,9 @@
           <router-link :to="{ name: 'student-projects' }">
             <el-button text size="small">项目与匹配</el-button>
           </router-link>
+          <router-link :to="{ name: 'student-cooperation' }">
+            <el-button text size="small">合作项目</el-button>
+          </router-link>
           <router-link :to="{ name: 'student-profile' }">
             <el-button text size="small">我的画像</el-button>
           </router-link>

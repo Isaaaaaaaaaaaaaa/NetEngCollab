@@ -85,6 +85,26 @@ def _ensure_schema():
             _exec(f"ALTER TABLE {table} ADD COLUMN {column} TEXT NULL")
             return
 
+    def ensure_student_profiles_basic_info():
+        table = "student_profiles"
+
+        def ensure_column(col: str, sqlite_type: str, mysql_type: str):
+            if dialect == "sqlite":
+                if has_column_sqlite(table, col):
+                    return
+                _exec(f"ALTER TABLE {table} ADD COLUMN {col} {sqlite_type}")
+                return
+
+            if dialect in {"mysql", "mariadb"}:
+                if has_column_mysql(table, col):
+                    return
+                _exec(f"ALTER TABLE {table} ADD COLUMN {col} {mysql_type} NULL")
+                return
+
+        ensure_column("major", "TEXT", "VARCHAR(128)")
+        ensure_column("grade", "TEXT", "VARCHAR(32)")
+        ensure_column("class_name", "TEXT", "VARCHAR(64)")
+
     try:
         ensure_comments_parent_comment_id()
     except Exception:
@@ -92,5 +112,10 @@ def _ensure_schema():
 
     try:
         ensure_student_profiles_experiences_json()
+    except Exception:
+        pass
+
+    try:
+        ensure_student_profiles_basic_info()
     except Exception:
         pass

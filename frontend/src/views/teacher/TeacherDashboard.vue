@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div class="page teacher-dash">
     <div class="page-header">
       <div>
         <h2 class="page-title">我的项目与学生概览</h2>
@@ -10,22 +10,22 @@
       </el-button>
     </div>
 
-    <el-row :gutter="16" style="margin-top: 4px;">
-      <el-col :xs="24" :sm="6">
+    <el-row :gutter="16" class="stat-row" style="margin-top: 4px;">
+      <el-col :xs="24" :sm="8" :lg="8">
         <el-card class="app-card" shadow="never" body-style="padding: 14px 16px;">
           <div class="page-subtitle" style="margin-bottom: 4px;">已发布项目</div>
           <div style="font-size: 22px; font-weight: 600;">{{ posts.length }}</div>
           <div style="font-size: 11px; color: var(--app-muted); margin-top: 4px;">包含科研、大创和竞赛项目</div>
         </el-card>
       </el-col>
-      <el-col :xs="24" :sm="6">
+      <el-col :xs="24" :sm="8" :lg="8">
         <el-card class="app-card" shadow="never" body-style="padding: 14px 16px;">
           <div class="page-subtitle" style="margin-bottom: 4px;">合作项目</div>
           <div style="font-size: 22px; font-weight: 600;">{{ projects.length }}</div>
           <div style="font-size: 11px; color: var(--app-muted); margin-top: 4px;">已确认合作的项目数</div>
         </el-card>
       </el-col>
-      <el-col :xs="24" :sm="6">
+      <el-col :xs="24" :sm="8" :lg="8">
         <el-card class="app-card" shadow="never" body-style="padding: 14px 16px;">
           <div class="page-subtitle" style="margin-bottom: 4px;">待处理请求</div>
           <div style="font-size: 22px; font-weight: 600;">{{ requests.length }}</div>
@@ -34,25 +34,26 @@
       </el-col>
     </el-row>
 
-    <el-row :gutter="16" style="margin-top: 16px;">
+    <el-row :gutter="16" class="dash-main" style="margin-top: 16px;">
       <el-col :xs="24" :lg="16">
-        <div style="display: flex; flex-direction: column; gap: 14px;">
-          <el-card class="app-card" shadow="never">
-            <template #header>
-              <div style="display: flex; align-items: center; justify-content: space-between;">
-                <div>
-                  <div class="page-subtitle">最近发布的项目</div>
-                  <div style="font-size: 11px; color: var(--app-muted); margin-top: 2px;">最近发布的项目按时间倒序展示</div>
-                </div>
-                <el-button link type="primary" size="small" @click="$router.push({ name: 'teacher-posts' })">
-                  管理项目
-                </el-button>
+        <el-card class="app-card dash-card dash-card-recent" shadow="never">
+          <template #header>
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <div>
+                <div class="page-subtitle">最近发布的项目</div>
+                <div style="font-size: 11px; color: var(--app-muted); margin-top: 2px;">最近发布的项目按时间倒序展示</div>
               </div>
-            </template>
-            <el-empty v-if="!posts.length" description="还没有发布项目" />
-            <el-timeline v-else>
+              <el-button link type="primary" size="small" @click="$router.push({ name: 'teacher-posts' })">
+                管理项目
+              </el-button>
+            </div>
+          </template>
+
+          <el-empty v-if="!posts.length" description="还没有发布项目" />
+          <el-scrollbar v-else class="dash-scroll">
+            <el-timeline style="padding-right: 6px;">
               <el-timeline-item
-                v-for="p in posts"
+                v-for="p in pagedPosts"
                 :key="p.id"
                 size="small"
                 type="primary"
@@ -63,47 +64,64 @@
                 </div>
               </el-timeline-item>
             </el-timeline>
-          </el-card>
+          </el-scrollbar>
 
-          <!-- 当前合作模块已移除（合作管理请进入“合作项目进度管理”页面） -->
-        </div>
+          <div v-if="posts.length > postsPageSize" style="text-align:right; margin-top: 8px; flex: 0 0 auto;">
+            <el-pagination
+              background
+              layout="prev, pager, next"
+              :current-page="postsPage"
+              :page-size="postsPageSize"
+              :total="posts.length"
+              @current-change="handlePostsPageChange"
+            />
+          </div>
+        </el-card>
       </el-col>
 
       <el-col :xs="24" :lg="8">
-        <div style="display: flex; flex-direction: column; gap: 14px;">
-          <el-card class="app-card" shadow="never">
-            <template #header>
-              <div class="page-subtitle">合作请求</div>
-            </template>
-            <el-empty v-if="!requests.length" description="暂无新的合作请求" />
-            <el-scrollbar v-else style="max-height: 200px;">
-              <ul style="list-style: none; padding: 0; margin: 0;">
-                <li
-                  v-for="r in requests"
-                  :key="r.id"
-                  style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; padding: 4px 0; gap: 8px;"
-                >
-                  <div class="truncate" style="max-width: 160px;">
-                    {{ r.student?.display_name || "学生" }} 申请加入 {{ r.post?.title || "项目" }}
-                  </div>
-                  <div style="display: flex; gap: 4px;">
-                    <el-button type="primary" size="small" text @click="accept(r)">接受</el-button>
-                    <el-button size="small" text @click="reject(r)">拒绝</el-button>
-                  </div>
-                </li>
-              </ul>
-            </el-scrollbar>
-          </el-card>
+        <el-card class="app-card dash-card dash-card-requests" shadow="never">
+          <template #header>
+            <div class="page-subtitle">合作请求</div>
+          </template>
 
-          <!-- 推荐学生列表已移至学生画像与匹配页面的排序功能中 -->
-        </div>
+          <el-empty v-if="!requests.length" description="暂无新的合作请求" />
+          <el-scrollbar v-else class="dash-scroll">
+            <ul style="list-style: none; padding: 0; margin: 0; padding-right: 6px;">
+              <li
+                v-for="r in pagedRequests"
+                :key="r.id"
+                style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; padding: 6px 0; gap: 8px;"
+              >
+                <div class="truncate" style="max-width: 240px;">
+                  {{ r.student?.display_name || "学生" }} 申请加入 {{ r.post?.title || "项目" }}
+                </div>
+                <div class="btns">
+                  <el-button type="primary" size="small" text @click="accept(r)">接受</el-button>
+                  <el-button size="small" text @click="reject(r)">拒绝</el-button>
+                </div>
+              </li>
+            </ul>
+          </el-scrollbar>
+
+          <div v-if="requests.length > requestsPageSize" style="text-align:right; margin-top: 8px; flex: 0 0 auto;">
+            <el-pagination
+              background
+              layout="prev, pager, next"
+              :current-page="requestsPage"
+              :page-size="requestsPageSize"
+              :total="requests.length"
+              @current-change="handleRequestsPageChange"
+            />
+          </div>
+        </el-card>
       </el-col>
     </el-row>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import axios from "axios";
 
 
@@ -111,11 +129,27 @@ const posts = ref<any[]>([]);
 const projects = ref<any[]>([]);
 const requests = ref<any[]>([]);
 
+const postsPage = ref(1);
+const postsPageSize = 5;
+const requestsPage = ref(1);
+const requestsPageSize = 5;
+
+const pagedPosts = computed(() => {
+  const start = (postsPage.value - 1) * postsPageSize;
+  return (posts.value || []).slice(start, start + postsPageSize);
+});
+
+const pagedRequests = computed(() => {
+  const start = (requestsPage.value - 1) * requestsPageSize;
+  return (requests.value || []).slice(start, start + requestsPageSize);
+});
+
 
 async function loadPosts() {
   const meResp = await axios.get("/api/auth/me");
   const resp = await axios.get("/api/teacher-posts");
   posts.value = resp.data.items.filter((x: any) => x.teacher && x.teacher.id === meResp.data.id);
+  postsPage.value = 1;
 }
 
 
@@ -132,6 +166,17 @@ async function loadRequests() {
   requests.value = resp.data.items.filter(
     (x: any) => x.teacher_status === "pending" && x.initiated_by === "student"
   );
+  requestsPage.value = 1;
+}
+
+
+function handlePostsPageChange(p: number) {
+  postsPage.value = p;
+}
+
+
+function handleRequestsPageChange(p: number) {
+  requestsPage.value = p;
 }
 
 
@@ -153,3 +198,50 @@ onMounted(() => {
   loadRequests();
 });
 </script>
+
+<style scoped>
+.dash-main {
+  align-items: stretch;
+}
+
+.dash-main :deep(.el-col) {
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-card {
+  height: 420px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-card :deep(.el-card__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.dash-scroll :deep(.el-scrollbar__view) {
+  padding-top: 10px;
+}
+
+.btns {
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

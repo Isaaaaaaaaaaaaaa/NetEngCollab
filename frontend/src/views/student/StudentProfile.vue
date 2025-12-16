@@ -16,21 +16,31 @@
               <el-form :model="form" label-position="top" size="small">
                 <el-row :gutter="12">
                   <el-col :xs="24" :sm="12">
-                    <el-form-item label="专业方向">
-                      <el-input v-model="form.direction" placeholder="如：网络安全、人工智能、物联网" />
+                    <el-form-item label="兴趣标签（逗号分隔）">
+                      <el-input v-model="interestsInput" placeholder="如：深度学习, 网络攻防" />
                     </el-form-item>
                   </el-col>
                   <el-col :xs="24" :sm="12">
-                    <el-form-item label="兴趣标签（逗号分隔）">
-                      <el-input v-model="interestsInput" placeholder="如：深度学习, 网络攻防" />
+                    <el-form-item label="专业">
+                      <el-input v-model="form.major" placeholder="如：计算机科学与技术" />
                     </el-form-item>
                   </el-col>
                 </el-row>
 
                 <el-row :gutter="12">
                   <el-col :xs="24" :sm="8">
-                    <el-form-item label="每周可投入时间（小时）">
-                      <el-input-number v-model="form.weekly_hours" :min="0" :max="60" controls-position="right" style="width:100%;" />
+                    <el-form-item label="年级">
+                      <el-select v-model="form.grade" style="width:100%;" placeholder="请选择年级">
+                        <el-option label="大一" value="大一" />
+                        <el-option label="大二" value="大二" />
+                        <el-option label="大三" value="大三" />
+                        <el-option label="大四" value="大四" />
+                      </el-select>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :xs="24" :sm="8">
+                    <el-form-item label="班级">
+                      <el-input v-model="form.class_name" placeholder="如：计科 2 班" />
                     </el-form-item>
                   </el-col>
                   <el-col :xs="24" :sm="8">
@@ -42,12 +52,25 @@
                       </el-select>
                     </el-form-item>
                   </el-col>
+                </el-row>
+
+                <el-row :gutter="12">
+                  <el-col :xs="24" :sm="8">
+                    <el-form-item label="每周可投入时间（小时）">
+                      <el-input-number v-model="form.weekly_hours" :min="0" :max="60" controls-position="right" style="width:100%;" />
+                    </el-form-item>
+                  </el-col>
                   <el-col :xs="24" :sm="8">
                     <el-form-item label="合作偏好">
                       <el-space wrap :size="10">
                         <el-checkbox v-model="form.prefer_local">优先本地</el-checkbox>
                         <el-checkbox v-model="form.accept_cross">跨方向</el-checkbox>
                       </el-space>
+                    </el-form-item>
+                  </el-col>
+                  <el-col :xs="24" :sm="8">
+                    <el-form-item label="">
+                      <div />
                     </el-form-item>
                   </el-col>
                 </el-row>
@@ -203,6 +226,9 @@ import axios from "axios";
 
 
 const form = reactive<any>({
+  major: "",
+  grade: "",
+  class_name: "",
   direction: "",
   skills: [] as any[],
   project_links: [] as string[],
@@ -235,6 +261,9 @@ async function load() {
   try {
     const resp = await axios.get("/api/student-profile");
     Object.assign(form, resp.data);
+    if (!form.major && form.direction) {
+      form.major = form.direction;
+    }
     interestsInput.value = (form.interests || []).join(", ");
   } catch (e) {
   }
@@ -253,6 +282,7 @@ async function syncProfile(showHint = false) {
     .filter(x => x);
   await axios.put("/api/student-profile", {
     ...form,
+    direction: (form.major || form.direction || "").trim() || null,
     interests
   });
   if (showHint) {

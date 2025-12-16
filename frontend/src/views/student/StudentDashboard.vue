@@ -73,25 +73,36 @@
               </div>
             </template>
             <el-empty v-if="!projects.length" description="还没有合作项目，可先浏览教师发布的项目" />
-            <el-table
-              v-else
-              :data="projects.slice(0, 3)"
-              size="small"
-              style="width: 100%;"
-              border
-              :show-header="false"
-            >
-              <el-table-column prop="title" min-width="200">
-                <template #default="scope">
-                  <span style="font-size: 13px;" class="truncate">{{ scope.row.title }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column width="90" align="right">
-                <template #default>
-                  <span class="pill badge-amber">进行中</span>
-                </template>
-              </el-table-column>
-            </el-table>
+            <el-scrollbar v-else class="dash-table-scroll">
+              <el-table
+                :data="pagedProjects"
+                size="small"
+                style="width: 100%;"
+                border
+                :show-header="false"
+              >
+                <el-table-column prop="title" min-width="200">
+                  <template #default="scope">
+                    <span style="font-size: 13px;" class="truncate">{{ scope.row.title }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column width="90" align="right">
+                  <template #default>
+                    <span class="pill badge-amber">进行中</span>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </el-scrollbar>
+            <div v-if="projects.length > projectPageSize" style="margin-top:8px; text-align:right;">
+              <el-pagination
+                background
+                layout="prev, pager, next"
+                :current-page="projectPage"
+                :page-size="projectPageSize"
+                :total="projects.length"
+                @current-change="handleProjectPageChange"
+              />
+            </div>
           </el-card>
         </div>
       </el-col>
@@ -127,7 +138,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import axios from "axios";
 
 
@@ -135,6 +146,14 @@ const topProjects = ref<any[]>([]);
 const projects = ref<any[]>([]);
 const skills = ref<any[]>([]);
 const invitations = ref<any[]>([]);
+
+const projectPage = ref(1);
+const projectPageSize = 2;
+
+const pagedProjects = computed(() => {
+  const start = (projectPage.value - 1) * projectPageSize;
+  return (projects.value || []).slice(start, start + projectPageSize);
+});
 
 
 async function loadMatch() {
@@ -152,8 +171,14 @@ async function loadProjects() {
   try {
     const resp = await axios.get("/api/cooperation/projects");
     projects.value = resp.data.items;
+    projectPage.value = 1;
   } catch (e) {
   }
+}
+
+
+function handleProjectPageChange(p: number) {
+  projectPage.value = p;
 }
 
 
@@ -235,6 +260,13 @@ onMounted(() => {
 .dash-card :deep(.el-card__body) {
   height: calc(100% - 54px);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-table-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .truncate {

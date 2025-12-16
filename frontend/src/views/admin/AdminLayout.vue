@@ -15,6 +15,9 @@
           <router-link :to="{ name: 'admin-dashboard' }">
             <el-button text size="small">总览</el-button>
           </router-link>
+          <router-link :to="{ name: 'admin-analytics' }">
+            <el-button text size="small">数据分析</el-button>
+          </router-link>
           <router-link :to="{ name: 'admin-users' }">
             <el-button text size="small">人员概览</el-button>
           </router-link>

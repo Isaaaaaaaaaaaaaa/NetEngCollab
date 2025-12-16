@@ -1,15 +1,20 @@
 from datetime import datetime, timedelta
 
+from sqlalchemy import or_
+
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from ..extensions import db
 from ..models import (
+    CooperationProject,
     CooperationRequest,
     CooperationStatus,
     Message,
     Resource,
     ReviewStatus,
+    Role,
+    StudentProfile,
     TeacherPost,
     User,
 )
@@ -47,6 +52,20 @@ def release_cooperation(req_id: int):
     req.student_status = CooperationStatus.rejected.value
     req.final_status = CooperationStatus.rejected.value
     req.updated_at = now_utc()
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@bp.post("/cooperations/<int:req_id>/reset")
+@require_roles(["admin"])
+def reset_cooperation(req_id: int):
+    req = CooperationRequest.query.get(req_id)
+    if not req:
+        return jsonify({"message": "不存在"}), 404
+    proj = CooperationProject.query.filter_by(request_id=req.id).first()
+    if proj:
+        db.session.delete(proj)
+    db.session.delete(req)
     db.session.commit()
     return jsonify({"ok": True})
 
@@ -244,6 +263,7 @@ def pending_resources():
 @require_roles(["admin"])
 def list_users():
     role = (request.args.get("role") or "").strip()
+    keyword = (request.args.get("keyword") or "").strip()
     page = max(int(request.args.get("page", 1)), 1)
     page_size = int(request.args.get("page_size", 20))
     if page_size <= 0 or page_size > 100:
@@ -251,6 +271,8 @@ def list_users():
     q = User.query
     if role in {"student", "teacher", "admin"}:
         q = q.filter_by(role=role)
+    if keyword:
+        q = q.filter(or_(User.username.contains(keyword), User.display_name.contains(keyword)))
     total = q.count()
     users = (
         q.order_by(User.created_at.desc())
@@ -258,6 +280,7 @@ def list_users():
         .limit(page_size)
         .all()
     )
+
     return jsonify(
         {
             "items": [
@@ -267,7 +290,7 @@ def list_users():
                     "display_name": u.display_name,
                     "role": u.role,
                     "is_active": u.is_active,
-                    "created_at": u.created_at.isoformat(),
+                    "created_at": u.created_at.isoformat() if u.created_at else None,
                     "email": u.email,
                     "phone": u.phone,
                 }
@@ -278,6 +301,64 @@ def list_users():
             "page_size": page_size,
         }
     )
+
+
+@bp.get("/users/<int:user_id>")
+@require_roles(["admin"])
+def get_user_detail(user_id: int):
+    u = User.query.get(user_id)
+    if not u:
+        return jsonify({"message": "用户不存在"}), 404
+
+    base = {
+        "id": u.id,
+        "username": u.username,
+        "display_name": u.display_name,
+        "role": u.role,
+        "is_active": u.is_active,
+        "created_at": u.created_at.isoformat() if u.created_at else None,
+        "email": u.email,
+        "phone": u.phone,
+    }
+
+    detail = {"user": base}
+
+    if u.role == Role.student.value:
+        p = StudentProfile.query.filter_by(user_id=u.id).first()
+        if p:
+            detail["student_profile"] = {
+                "major": p.major,
+                "grade": p.grade,
+                "class_name": p.class_name,
+                "weekly_hours": p.weekly_hours,
+                "prefer_local": p.prefer_local,
+                "accept_cross": p.accept_cross,
+                "visibility": p.visibility,
+                "skills": json_loads(p.skills_json, []),
+                "interests": json_loads(p.interests_json, []),
+                "project_links": json_loads(p.project_links_json, []),
+                "experiences": json_loads(p.experiences_json or "[]", []),
+            }
+        else:
+            detail["student_profile"] = None
+
+        detail["stats"] = {
+            "confirmed_projects": CooperationRequest.query.filter_by(
+                student_user_id=u.id,
+                final_status=CooperationStatus.confirmed.value,
+            ).count(),
+        }
+
+    if u.role == Role.teacher.value:
+        detail["stats"] = {
+            "published_posts": TeacherPost.query.filter_by(teacher_user_id=u.id).count(),
+            "confirmed_projects": CooperationRequest.query.filter_by(
+                teacher_user_id=u.id,
+                final_status=CooperationStatus.confirmed.value,
+            ).count(),
+        }
+
+    return jsonify(detail)
 
 
 @bp.post("/users/batch-create")
@@ -349,7 +430,14 @@ def list_projects():
     if page_size <= 0 or page_size > 100:
         page_size = 20
 
+    post_type = (request.args.get("post_type") or "").strip()
+    keyword = (request.args.get("keyword") or "").strip()
+
     q = TeacherPost.query
+    if post_type in {"project", "innovation", "competition"}:
+        q = q.filter_by(post_type=post_type)
+    if keyword:
+        q = q.filter(TeacherPost.title.contains(keyword))
     total = q.count()
     posts = (
         q.order_by(TeacherPost.created_at.desc())

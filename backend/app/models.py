@@ -49,6 +49,9 @@ class StudentProfile(db.Model):
     __tablename__ = "student_profiles"
 
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), primary_key=True)
+    major = db.Column(db.String(128), nullable=True)
+    grade = db.Column(db.String(32), nullable=True)
+    class_name = db.Column(db.String(64), nullable=True)
     direction = db.Column(db.String(128), nullable=True)
     skills_json = db.Column(db.Text, nullable=False, default="[]")
     project_links_json = db.Column(db.Text, nullable=False, default="[]")

@@ -36,33 +36,32 @@
           <template #header>
             <div class="page-subtitle">{{ mode === "resources" ? "资源列表" : "成果列表" }}</div>
           </template>
-          <el-scrollbar class="split-scroll">
+          <el-empty v-if="!items.length" :description="mode === 'resources' ? '暂无资源记录' : '暂无成果记录'" />
+          <el-scrollbar v-else class="split-scroll">
             <ul style="list-style:none; padding:0; margin:0; font-size:12px; color:var(--app-text);">
               <li
-                v-for="r in itemsDisplay"
+                v-for="r in items"
                 :key="r.id"
                 style="padding:10px 0; border-bottom:1px solid rgba(148,163,184,0.25);"
               >
                 <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px;">
                   <div style="display:flex; flex-direction:column; gap:2px; min-width:0;">
-                    <span class="truncate" style="font-size:13px; font-weight:600; max-width:420px;">{{ r.__placeholder ? "暂无" : r.title }}</span>
-                    <span class="truncate" style="font-size:11px; color:var(--app-muted); max-width:420px;">{{ r.__placeholder ? "-" : (r.description || "无描述") }}</span>
+                    <span class="truncate" style="font-size:13px; font-weight:600; max-width:420px;">{{ r.title }}</span>
+                    <span class="truncate" style="font-size:11px; color:var(--app-muted); max-width:420px;">{{ r.description || "无描述" }}</span>
                   </div>
-                  <span v-if="!r.__placeholder" class="pill badge-blue" style="font-size:10px;">{{ r.resource_type }}</span>
-                  <span v-else style="font-size:11px; color:var(--app-muted);">-</span>
+                  <span class="pill badge-blue" style="font-size:10px;">{{ r.resource_type }}</span>
                 </div>
                 <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-                  <div v-if="!r.__placeholder" style="display:flex; flex-wrap:wrap; gap:4px;">
+                  <div style="display:flex; flex-wrap:wrap; gap:4px;">
                     <span v-for="t in r.tags" :key="t" class="tag">{{ t }}</span>
                   </div>
-                  <div v-else style="font-size:11px; color:var(--app-muted);">-</div>
                   <div style="display:flex; gap:8px; align-items:center; font-size:11px; color:var(--app-muted);">
-                    <span>{{ r.__placeholder ? "" : (r.uploader?.display_name || "未知") }}</span>
-                    <span>{{ r.__placeholder ? "" : r.created_at?.slice(0, 10) }}</span>
-                    <el-button v-if="!r.__placeholder" size="small" text type="primary" @click="download(r)">下载</el-button>
+                    <span>{{ r.uploader?.display_name || "未知" }}</span>
+                    <span>{{ r.created_at?.slice(0, 10) }}</span>
+                    <el-button size="small" text type="primary" @click="download(r)">下载</el-button>
                   </div>
                 </div>
-                <div v-if="!r.__placeholder" style="margin-top:6px;">
+                <div style="margin-top:6px;">
                   <InteractionsPanel
                     :target-type="'resource'"
                     :target-id="r.id"
@@ -137,7 +136,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { onMounted, reactive, ref, watch } from "vue";
 import axios from "axios";
 import InteractionsPanel from "../../components/InteractionsPanel.vue";
 
@@ -157,18 +156,6 @@ const upload = reactive({
 });
 const fileInput = ref<HTMLInputElement | null>(null);
 const hint = ref(false);
-
-
-const itemsDisplay = computed(() => {
-  const out: any[] = (items.value || []).map((r: any) => ({ ...r, __placeholder: false }));
-  const target = pageSize.value;
-  for (let i = out.length; i < target; i++) {
-    out.push({ id: `ph-${page.value}-${i}`, __placeholder: true });
-  }
-  return out;
-});
-
-
 async function load() {
   const resp = await axios.get("/api/resources", {
     params: {

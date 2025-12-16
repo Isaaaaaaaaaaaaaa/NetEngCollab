@@ -37,7 +37,7 @@
       <div style="padding: 26px 26px 22px; border-left: 1px solid rgba(15, 23, 42, 0.06);">
         <div style="margin-bottom: 18px;">
           <div class="page-title" style="font-size: 18px;">登录平台</div>
-          <div class="page-subtitle">选择角色，使用分配的账号密码登录系统</div>
+          <div class="page-subtitle">选择角色，使用学号 / 工号作为账号登录系统</div>
         </div>
         <el-form :model="form" label-position="top" size="large" @submit.prevent>
           <el-form-item label="登录角色">
@@ -47,8 +47,8 @@
               </el-radio-button>
             </el-radio-group>
           </el-form-item>
-          <el-form-item label="账号">
-            <el-input v-model="form.username" placeholder="如 admin / teacher1 / student1" clearable />
+          <el-form-item label="账号（学号 / 工号）">
+            <el-input v-model="form.username" placeholder="如 221002501 / 10010001" clearable />
           </el-form-item>
           <el-form-item label="密码">
             <el-input v-model="form.password" type="password" placeholder="示例：admin123" show-password />
@@ -70,8 +70,8 @@
         <div style="margin-top: 12px; font-size: 11px; color: #98a2b3; line-height: 1.7;">
           <div style="margin-bottom: 4px;">测试账号示例：</div>
           <div>管理员：admin / admin123</div>
-          <div>教师：teacher1 / teacher123</div>
-          <div>学生：student1 / student123</div>
+          <div>教师：1010001 / tea123456</div>
+          <div>学生：221002501 / stu123456</div>
         </div>
       </div>
     </div>
