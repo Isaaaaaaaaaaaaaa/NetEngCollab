@@ -53,6 +53,7 @@ class StudentProfile(db.Model):
     skills_json = db.Column(db.Text, nullable=False, default="[]")
     project_links_json = db.Column(db.Text, nullable=False, default="[]")
     interests_json = db.Column(db.Text, nullable=False, default="[]")
+    experiences_json = db.Column(db.Text, nullable=False, default="[]")
     weekly_hours = db.Column(db.Integer, nullable=True)
     prefer_local = db.Column(db.Boolean, default=False, nullable=False)
     accept_cross = db.Column(db.Boolean, default=True, nullable=False)

@@ -239,6 +239,7 @@ def list_students():
 
         skills = json_loads(p.skills_json, [])
         interests = json_loads(p.interests_json, [])
+        experiences = json_loads(p.experiences_json or "[]", [])
         if direction and (p.direction or "") != direction:
             continue
         if skill and skill not in [s.get("name") for s in skills if isinstance(s, dict)]:
@@ -264,6 +265,7 @@ def list_students():
                 "direction": p.direction,
                 "skills": skills,
                 "interests": interests,
+                "experiences": experiences,
                 "weekly_hours": p.weekly_hours,
                 "prefer_local": p.prefer_local,
                 "accept_cross": p.accept_cross,
@@ -289,6 +291,7 @@ def get_my_student_profile():
             "skills": json_loads(p.skills_json, []),
             "project_links": json_loads(p.project_links_json, []),
             "interests": json_loads(p.interests_json, []),
+            "experiences": json_loads(p.experiences_json or "[]", []),
             "weekly_hours": p.weekly_hours,
             "prefer_local": p.prefer_local,
             "accept_cross": p.accept_cross,
@@ -313,6 +316,7 @@ def upsert_my_student_profile():
     p.skills_json = json_dumps(data.get("skills") or [])
     p.project_links_json = json_dumps(data.get("project_links") or [])
     p.interests_json = json_dumps(ensure_list_str(data.get("interests")))
+    p.experiences_json = json_dumps(data.get("experiences") or [])
     p.weekly_hours = data.get("weekly_hours")
     p.prefer_local = bool(data.get("prefer_local"))
     p.accept_cross = bool(data.get("accept_cross", True))

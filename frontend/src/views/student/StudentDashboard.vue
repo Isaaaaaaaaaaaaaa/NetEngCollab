@@ -35,10 +35,10 @@
       </el-col>
     </el-row>
 
-    <el-row :gutter="16" style="margin-top: 16px;">
+    <el-row :gutter="16" class="dash-main" style="margin-top: 16px;">
       <el-col :xs="24" :lg="16">
-        <div style="display: flex; flex-direction: column; gap: 14px;">
-          <el-card class="app-card" shadow="never">
+        <div class="dash-left">
+          <el-card class="app-card dash-card dash-card-match" shadow="never">
             <template #header>
               <div style="display: flex; align-items: center; justify-content: space-between;">
                 <div>
@@ -49,24 +49,21 @@
                   查看全部
                 </el-button>
               </div>
-            </template>
-            <el-empty v-if="!topProjects.length" description="还没有匹配记录，可先完善技能画像" />
-            <el-timeline v-else style="margin-top: 4px;">
-              <el-timeline-item
-                v-for="p in topProjects"
-                :key="p.id"
-                type="primary"
-                size="small"
-              >
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-                  <div style="font-size: 13px; font-weight: 500;" class="truncate">{{ p.title }}</div>
-                  <div class="pill badge-blue">匹配度 {{ Math.round(p.score * 100) }}%</div>
-                </div>
-              </el-timeline-item>
-            </el-timeline>
-          </el-card>
+          </template>
+          <el-empty v-if="!topProjects.length" description="还没有匹配记录，可先完善技能画像" />
+          <ul v-else style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:10px;">
+            <li
+              v-for="p in topProjects.slice(0, 2)"
+              :key="p.id"
+              style="display:flex; align-items:center; justify-content:space-between; gap:8px;"
+            >
+              <span style="font-size:13px; font-weight:600;" class="truncate">{{ p.title }}</span>
+              <span class="pill badge-blue">匹配度 {{ Math.round(p.score * 100) }}%</span>
+            </li>
+          </ul>
+        </el-card>
 
-          <el-card class="app-card" shadow="never">
+          <el-card class="app-card dash-card dash-card-projects" shadow="never">
             <template #header>
               <div style="display: flex; align-items: center; justify-content: space-between;">
                 <div class="page-subtitle">当前合作项目</div>
@@ -78,7 +75,7 @@
             <el-empty v-if="!projects.length" description="还没有合作项目，可先浏览教师发布的项目" />
             <el-table
               v-else
-              :data="projects"
+              :data="projects.slice(0, 3)"
               size="small"
               style="width: 100%;"
               border
@@ -100,15 +97,15 @@
       </el-col>
 
       <el-col :xs="24" :lg="8">
-        <el-card class="app-card" shadow="never">
+        <el-card class="app-card dash-card dash-card-invites" shadow="never">
           <template #header>
             <div class="page-subtitle">合作邀请</div>
           </template>
           <el-empty v-if="!invitations.length" description="暂无合作邀请" />
-          <el-scrollbar v-else style="max-height: 200px;">
+          <el-scrollbar v-else style="max-height: 180px;">
             <ul style="list-style: none; padding: 0; margin: 0;">
               <li
-                v-for="r in invitations"
+                v-for="r in invitations.slice(0, 3)"
                 :key="r.id"
                 style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; padding: 4px 0;"
               >
@@ -207,3 +204,42 @@ onMounted(() => {
   loadInvitations();
 });
 </script>
+
+<style scoped>
+.dash-main {
+  align-items: stretch;
+}
+
+.dash-left {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dash-card {
+  overflow: hidden;
+}
+
+.dash-card-match {
+  height: 170px;
+}
+
+.dash-card-projects {
+  height: 210px;
+}
+
+.dash-card-invites {
+  height: 394px;
+}
+
+.dash-card :deep(.el-card__body) {
+  height: calc(100% - 54px);
+  overflow: hidden;
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

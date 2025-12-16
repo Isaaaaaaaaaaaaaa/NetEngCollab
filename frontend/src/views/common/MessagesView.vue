@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div class="page msg-page">
     <div class="page-header">
       <div>
         <h2 class="page-title">站内私信</h2>
@@ -7,9 +7,9 @@
       </div>
     </div>
 
-    <el-row :gutter="16" style="margin-top: 6px;">
+    <el-row :gutter="16" class="msg-row" style="margin-top: 6px;">
       <el-col :xs="24" :lg="8">
-        <el-card class="app-card" shadow="never">
+        <el-card class="app-card msg-card" shadow="never">
           <template #header>
             <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
               <div class="page-subtitle">会话</div>
@@ -23,8 +23,8 @@
             </div>
           </template>
           <el-empty v-if="!filteredConversations.length" description="暂无会话" />
-          <el-scrollbar v-else style="max-height: 520px;">
-            <ul style="list-style:none; padding:0; margin:0;">
+          <el-scrollbar v-else class="msg-conv-scroll">
+            <ul style="list-style:none; padding:0; margin:0; padding-right:6px;">
               <li
                 v-for="c in filteredConversations"
                 :key="c.id"
@@ -50,7 +50,7 @@
       </el-col>
 
       <el-col :xs="24" :lg="16">
-        <el-card class="app-card" shadow="never" style="display:flex; flex-direction:column; height:100%;">
+        <el-card class="app-card msg-card" shadow="never">
           <template #header>
             <div style="display:flex; align-items:center; justify-content:space-between;">
               <div class="page-subtitle">{{ activeOther?.display_name || '消息' }}</div>
@@ -213,6 +213,45 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.msg-page {
+  height: calc(100vh - 160px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.msg-row {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: calc(100vh - 160px);
+  overflow: hidden;
+}
+
+.msg-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.msg-row :deep(.el-col) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.msg-card :deep(.el-card__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.msg-conv-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .conv-item {
   display: flex;
   gap: 10px;

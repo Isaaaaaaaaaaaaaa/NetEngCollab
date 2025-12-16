@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div class="page proj-page">
     <div class="page-header">
       <div>
         <h2 class="page-title">教师项目 / 大创 / 竞赛</h2>
@@ -22,22 +22,21 @@
       </el-space>
     </div>
 
-    <el-row :gutter="16" style="margin-top: 6px;">
+    <el-row :gutter="16" class="proj-main" style="margin-top: 6px;">
       <el-col :xs="24" :lg="16">
-        <el-card class="app-card" shadow="never">
+        <el-card class="app-card proj-card proj-card-list" shadow="never">
           <template #header>
             <div class="page-subtitle">项目列表</div>
           </template>
-          <el-empty v-if="!posts.length" description="暂无项目记录" />
           <el-table
-            v-else
-            :data="posts"
+            :data="postsDisplay"
             size="small"
             border
             style="width: 100%;"
           >
             <el-table-column prop="title" label="项目" min-width="200">
               <template #default="scope">
+                <div v-if="scope.row.__placeholder" style="font-size:12px; color:var(--app-muted);">暂无</div>
                 <div style="display: flex; flex-direction: column; gap: 2px;">
                   <span style="font-size: 13px; font-weight: 500;" class="truncate">{{ scope.row.title }}</span>
                   <span style="font-size: 11px; color: var(--app-muted);" class="truncate">{{ scope.row.content }}</span>
@@ -46,6 +45,7 @@
             </el-table-column>
             <el-table-column label="类型" width="90" align="center">
               <template #default="scope">
+                <span v-if="scope.row.__placeholder" style="font-size:12px; color:var(--app-muted);">-</span>
                 <span class="pill" :class="scope.row.post_type === 'competition' ? 'badge-amber' : 'badge-blue'">
                   {{ typeLabel(scope.row.post_type) }}
                 </span>
@@ -53,6 +53,7 @@
             </el-table-column>
             <el-table-column label="技术栈" min-width="140">
               <template #default="scope">
+                <span v-if="scope.row.__placeholder" style="font-size:12px; color:var(--app-muted);">-</span>
                 <div style="display: flex; flex-wrap: wrap; gap: 4px;">
                   <span v-for="t in scope.row.tech_stack" :key="t" class="tag">{{ t }}</span>
                   <span v-for="t in scope.row.tags" :key="t" class="tag">{{ t }}</span>
@@ -61,11 +62,13 @@
             </el-table-column>
             <el-table-column label="招募人数" width="90" align="center">
               <template #default="scope">
+                <span v-if="scope.row.__placeholder" style="font-size:12px; color:var(--app-muted);">-</span>
                 <span style="font-size: 12px;">{{ scope.row.recruit_count || "未设置" }}</span>
               </template>
             </el-table-column>
             <el-table-column label="周期/截止" min-width="120" align="center">
               <template #default="scope">
+                <span v-if="scope.row.__placeholder" style="font-size:12px; color:var(--app-muted);">-</span>
                 <div style="display:flex; flex-direction:column; gap:2px;">
                   <span style="font-size:12px;">{{ scope.row.duration || "周期未设定" }}</span>
                   <span style="font-size:11px; color:var(--app-muted);">
@@ -76,6 +79,7 @@
             </el-table-column>
             <el-table-column label="教师" width="120" align="center">
               <template #default="scope">
+                <span v-if="scope.row.__placeholder" style="font-size: 12px; color:var(--app-muted);">-</span>
                 <el-link
                   v-if="scope.row.teacher"
                   type="primary"
@@ -90,6 +94,7 @@
             </el-table-column>
             <el-table-column label="我的状态" width="110" align="center">
               <template #default="scope">
+                <span v-if="scope.row.__placeholder" style="font-size: 11px; color: var(--app-muted);">-</span>
                 <span
                   v-if="requestStatus[scope.row.id]"
                   class="pill"
@@ -104,10 +109,13 @@
             <el-table-column label="互动" width="220" align="right">
               <template #default="scope">
                 <InteractionsPanel
+                  v-if="!scope.row.__placeholder"
                   :target-type="'teacher_post'"
                   :target-id="scope.row.id"
+                  :enable-comments="false"
                   @changed="handleInteractionChanged"
                 />
+                <span v-else style="font-size: 11px; color: var(--app-muted);">-</span>
               </template>
             </el-table-column>
             <el-table-column label="操作" min-width="120" align="right" fixed="right">
@@ -116,7 +124,7 @@
                   size="small"
                   type="primary"
                   text
-                  :disabled="!!requestStatus[scope.row.id] && requestStatus[scope.row.id].final_status !== 'rejected'"
+                  :disabled="scope.row.__placeholder || (!!requestStatus[scope.row.id] && requestStatus[scope.row.id].final_status !== 'rejected')"
                   @click="apply(scope.row)"
                 >
                   申请加入
@@ -138,24 +146,25 @@
       </el-col>
 
       <el-col :xs="24" :lg="8">
-        <div style="display: flex; flex-direction: column; gap: 14px;">
-          <el-card class="app-card" shadow="never">
+        <div class="proj-right">
+          <el-card class="app-card proj-card proj-card-match" shadow="never">
             <template #header>
               <div class="page-subtitle">智能匹配推荐 TOP10</div>
             </template>
-            <el-empty v-if="!matched.length" description="暂无匹配结果，可先完善技能画像和兴趣标签" />
-            <el-scrollbar v-else style="max-height: 260px;">
-              <ul style="list-style: none; padding: 0; margin: 0;">
-                <li
-                  v-for="p in matched"
-                  :key="p.id"
-                  style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; padding: 4px 0; gap: 8px;"
-                >
-                  <span class="truncate" style="max-width: 180px;">{{ p.title }}</span>
-                  <span class="pill badge-green">匹配度 {{ Math.round(p.score * 100) }}%</span>
-                </li>
-              </ul>
-            </el-scrollbar>
+            <ul class="top10-list">
+              <li
+                v-for="(p, idx) in matchedDisplay"
+                :key="p.id"
+                class="top10-item"
+                :class="idx === matchedDisplay.length - 1 ? 'is-last' : ''"
+              >
+                <span class="truncate" style="max-width: 180px; color: var(--app-text);">
+                  {{ p.__placeholder ? "暂无推荐" : p.title }}
+                </span>
+                <span v-if="!p.__placeholder" class="pill badge-green">匹配度 {{ Math.round(p.score * 100) }}%</span>
+                <span v-else style="font-size: 11px; color: var(--app-muted);">-</span>
+              </li>
+            </ul>
           </el-card>
         </div>
       </el-col>
@@ -164,7 +173,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import axios from "axios";
 import InteractionsPanel from "../../components/InteractionsPanel.vue";
@@ -177,8 +186,25 @@ const requestStatus = reactive<Record<number, any>>({});
 const router = useRouter();
 const reactFilter = ref<"all" | "liked" | "favorited">("all");
 const page = ref(1);
-const pageSize = ref(10);
+const pageSize = ref(5);
 const total = ref(0);
+
+const postsDisplay = computed(() => {
+  const out: any[] = (posts.value || []).map((p: any) => ({ ...p, __placeholder: false }));
+  const target = pageSize.value;
+  for (let i = out.length; i < target; i++) {
+    out.push({ id: -1 * (page.value * 100 + i + 1), __placeholder: true });
+  }
+  return out;
+});
+
+const matchedDisplay = computed(() => {
+  const out: any[] = (matched.value || []).slice(0, 10).map((p: any) => ({ ...p, __placeholder: false }));
+  for (let i = out.length; i < 10; i++) {
+    out.push({ id: `ph-${i}`, __placeholder: true });
+  }
+  return out;
+});
 
 
 function typeLabel(t: string) {
@@ -292,3 +318,96 @@ watch(reactFilter, () => {
   loadPosts();
 });
 </script>
+
+<style scoped>
+.proj-page {
+  height: calc(100vh - 160px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.proj-main {
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.proj-main :deep(.el-col) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.proj-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.proj-card-list {
+  min-height: 360px;
+}
+
+.proj-card-match {
+  min-height: 360px;
+}
+
+.proj-card :deep(.el-card__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.proj-card-list :deep(.el-card__body) {
+  display: flex;
+  flex-direction: column;
+}
+
+.proj-card-list :deep(.el-table) {
+  flex: 1 1 auto;
+}
+
+.proj-card-match :deep(.el-card__body) {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.proj-right {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.top10-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.top10-item {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  padding: 0 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.top10-item.is-last {
+  border-bottom: none;
+}
+</style>
