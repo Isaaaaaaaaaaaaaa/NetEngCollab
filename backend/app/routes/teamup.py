@@ -12,6 +12,7 @@ bp = Blueprint("teamup", __name__)
 @bp.get("/teamup")
 def list_teamup():
     keyword = (request.args.get("keyword") or "").strip()
+    tag = (request.args.get("tag") or "").strip()
     like_only = (request.args.get("like_only") or "").strip() in {"1", "true", "yes"}
     favorite_only = (request.args.get("favorite_only") or "").strip() in {"1", "true", "yes"}
     page = max(int(request.args.get("page", 1)), 1)
@@ -21,6 +22,8 @@ def list_teamup():
     q = TeamupPost.query
     if keyword:
         q = q.filter(TeamupPost.title.contains(keyword) | TeamupPost.content.contains(keyword))
+    if tag:
+        q = q.filter(TeamupPost.tags_json.contains(tag))
 
     if like_only or favorite_only:
         if not request.headers.get("Authorization"):
@@ -65,7 +68,7 @@ def list_teamup():
                 "content": p.content,
                 "needed_roles": json_loads(p.needed_roles_json, []),
                 "tags": json_loads(p.tags_json, []),
-                "author": {"id": u.id, "display_name": u.display_name} if u else None,
+                "author": {"id": u.id, "display_name": u.display_name, "role": u.role} if u else None,
                 "created_at": p.created_at.isoformat(),
             }
         )

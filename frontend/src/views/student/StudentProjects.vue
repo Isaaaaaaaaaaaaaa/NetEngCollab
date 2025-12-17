@@ -5,29 +5,47 @@
         <h2 class="page-title">教师项目 / 大创 / 竞赛</h2>
         <p class="page-subtitle">按兴趣和技能筛选项目，并一键发起合作申请</p>
       </div>
-      <el-space :size="8">
-        <el-radio-group v-model="reactFilter" size="small">
-          <el-radio-button label="all">全部</el-radio-button>
-          <el-radio-button label="liked">我点赞的</el-radio-button>
-          <el-radio-button label="favorited">我收藏的</el-radio-button>
-          <el-radio-button label="joined">我加入的</el-radio-button>
-        </el-radio-group>
-        <el-select v-model="filters.teacherId" size="small" clearable placeholder="按教师筛选" style="width: 160px;">
-          <el-option label="全部教师" value="" />
-          <el-option v-for="t in teacherOptions" :key="t.id" :label="t.display_name" :value="t.id" />
-        </el-select>
-        <el-input
-          v-model="filters.keyword"
-          size="small"
-          placeholder="关键词，如 深度学习"
-          style="width: 220px;"
-          clearable
-        />
-        <el-button size="small" type="primary" plain @click="loadPosts">检索</el-button>
-      </el-space>
+      <div class="filter-block" style="margin-left: 24px;">
+        <div class="filter-row">
+          <el-input
+            v-model="filters.keyword"
+            size="small"
+            placeholder="关键词，如 深度学习"
+            clearable
+            class="filter-keyword"
+          />
+          <el-button size="small" type="primary" plain @click="loadPosts">检索</el-button>
+        </div>
+
+        <div class="filter-row">
+          <el-radio-group v-model="reactFilter" size="small" class="filter-react">
+            <el-radio-button label="all">全部</el-radio-button>
+            <el-radio-button label="liked">我点赞的</el-radio-button>
+            <el-radio-button label="favorited">我收藏的</el-radio-button>
+            <el-radio-button label="joined">我加入的</el-radio-button>
+          </el-radio-group>
+
+          <el-select v-model="filters.teacherId" size="small" clearable placeholder="按教师筛选" class="filter-item">
+            <el-option label="全部教师" value="" />
+            <el-option v-for="t in teacherOptions" :key="t.id" :label="t.display_name" :value="t.id" />
+          </el-select>
+
+          <el-select v-model="filters.postType" size="small" clearable placeholder="类型" class="filter-item">
+            <el-option label="科研项目" value="project" />
+            <el-option label="大创项目" value="innovation" />
+            <el-option label="学科竞赛" value="competition" />
+          </el-select>
+
+          <el-input v-model="filters.tech" size="small" placeholder="技术栈，如 Python" clearable class="filter-item" />
+
+          <el-tooltip content="点击教师姓名可发起私信沟通" placement="top">
+            <span class="filter-help">如何私信？</span>
+          </el-tooltip>
+        </div>
+      </div>
     </div>
 
-    <el-row :gutter="16" class="proj-main" style="margin-top: 6px;">
+    <el-row :gutter="16" class="proj-main" style="margin-top: 10px;">
       <el-col :xs="24" :lg="16">
         <el-card class="app-card proj-card proj-card-list" shadow="never">
           <template #header>
@@ -88,7 +106,9 @@
                   style="font-size:12px;"
                   @click.stop="chat(scope.row)"
                 >
-                  {{ scope.row.teacher.display_name }}
+                  <el-tooltip content="点击教师姓名可发起私信沟通" placement="top">
+                    <span>{{ scope.row.teacher.display_name }}</span>
+                  </el-tooltip>
                 </el-link>
                 <span v-else style="font-size: 12px;">-</span>
               </template>
@@ -111,7 +131,7 @@
                 <InteractionsPanel
                   :target-type="'teacher_post'"
                   :target-id="scope.row.id"
-                  :enable-comments="false"
+                  :enable-comments="true"
                   @changed="handleInteractionChanged"
                 />
               </template>
@@ -147,7 +167,7 @@
         <div class="proj-right">
           <el-card class="app-card proj-card proj-card-match" shadow="never">
             <template #header>
-              <div class="page-subtitle">智能匹配推荐 TOP5</div>
+              <div class="page-subtitle">智能匹配推荐</div>
             </template>
             <ul v-if="matched.length" class="top10-list">
               <li
@@ -179,7 +199,7 @@ import InteractionsPanel from "../../components/InteractionsPanel.vue";
 
 const posts = ref<any[]>([]);
 const matched = ref<any[]>([]);
-const filters = reactive({ keyword: "", teacherId: "" as any });
+const filters = reactive({ keyword: "", teacherId: "" as any, postType: "" as any, tech: "" });
 const requestStatus = reactive<Record<number, any>>({});
 const router = useRouter();
 const reactFilter = ref<"all" | "liked" | "favorited" | "joined">("all");
@@ -200,6 +220,8 @@ async function loadPosts() {
   const resp = await axios.get("/api/teacher-posts", {
     params: {
       keyword: filters.keyword || undefined,
+      tech: filters.tech || undefined,
+      post_type: filters.postType || undefined,
       teacher_user_id: filters.teacherId || undefined,
       like_only: reactFilter.value === "liked" ? 1 : undefined,
       favorite_only: reactFilter.value === "favorited" ? 1 : undefined,
@@ -336,6 +358,22 @@ watch(
     loadPosts();
   }
 );
+
+watch(
+  () => filters.postType,
+  () => {
+    page.value = 1;
+    loadPosts();
+  }
+);
+
+watch(
+  () => filters.tech,
+  () => {
+    page.value = 1;
+    loadPosts();
+  }
+);
 </script>
 
 <style scoped>
@@ -344,6 +382,43 @@ watch(
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.filter-card :deep(.el-card__body) {
+  padding: 12px 14px;
+}
+
+.filter-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.filter-keyword {
+  flex: 1 1 320px;
+  min-width: 220px;
+}
+
+.filter-react {
+  flex: 0 0 auto;
+}
+
+.filter-item {
+  width: 160px;
+}
+
+.filter-help {
+  font-size: 12px;
+  color: var(--app-muted);
+  cursor: help;
+  user-select: none;
 }
 
 .proj-main {

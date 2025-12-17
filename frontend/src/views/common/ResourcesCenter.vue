@@ -19,6 +19,13 @@
         </el-radio-group>
         <el-space :size="8">
           <el-input
+            v-model="filters.tag"
+            size="small"
+            placeholder="标签，如 CV"
+            style="width: 180px;"
+            clearable
+          />
+          <el-input
             v-model="filters.keyword"
             size="small"
             :placeholder="mode === 'resources' ? '关键词，如 Transformer' : '关键词，如 蓝桥杯 一等奖'"
@@ -142,7 +149,7 @@ import InteractionsPanel from "../../components/InteractionsPanel.vue";
 
 
 const items = ref<any[]>([]);
-const filters = reactive({ keyword: "" });
+const filters = reactive({ keyword: "", tag: "" });
 const mode = ref<"resources" | "achievements">("resources");
 const reactFilter = ref<"all" | "liked" | "favorited">("all");
 const page = ref(1);
@@ -160,6 +167,7 @@ async function load() {
   const resp = await axios.get("/api/resources", {
     params: {
       keyword: filters.keyword || undefined,
+      tag: filters.tag || undefined,
       category: mode.value === "achievements" ? "成果" : undefined,
       like_only: reactFilter.value === "liked" ? 1 : undefined,
       favorite_only: reactFilter.value === "favorited" ? 1 : undefined,

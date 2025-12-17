@@ -13,6 +13,7 @@ bp = Blueprint("forum", __name__)
 def list_topics():
     category = (request.args.get("category") or "").strip()
     keyword = (request.args.get("keyword") or "").strip()
+    tag = (request.args.get("tag") or "").strip()
     like_only = (request.args.get("like_only") or "").strip() in {"1", "true", "yes"}
     favorite_only = (request.args.get("favorite_only") or "").strip() in {"1", "true", "yes"}
     page = max(int(request.args.get("page", 1)), 1)
@@ -24,6 +25,8 @@ def list_topics():
         q = q.filter_by(category=category)
     if keyword:
         q = q.filter(ForumTopic.title.contains(keyword) | ForumTopic.content.contains(keyword))
+    if tag:
+        q = q.filter(ForumTopic.tags_json.contains(tag))
 
     if like_only or favorite_only:
         if not request.headers.get("Authorization"):
@@ -68,7 +71,7 @@ def list_topics():
                 "title": t.title,
                 "content": t.content,
                 "tags": json_loads(t.tags_json, []),
-                "author": {"id": u.id, "display_name": u.display_name} if u else None,
+                "author": {"id": u.id, "display_name": u.display_name, "role": u.role} if u else None,
                 "created_at": t.created_at.isoformat(),
             }
         )

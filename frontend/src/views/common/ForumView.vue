@@ -12,10 +12,17 @@
           <el-radio-button label="favorited">我收藏的</el-radio-button>
         </el-radio-group>
         <el-input
+          v-model="filters.tag"
+          size="small"
+          placeholder="标签，如 CV"
+          style="width: 160px;"
+          clearable
+        />
+        <el-input
           v-model="filters.keyword"
           size="small"
           placeholder="关键词，如 CNN"
-          style="width: 220px;"
+          style="width: 200px;"
           clearable
         />
         <el-button size="small" type="primary" plain @click="load">检索</el-button>
@@ -40,8 +47,20 @@
                   <span class="truncate" style="max-width:220px; font-weight:500;">{{ t.title }}</span>
                   <span class="pill badge-blue" style="font-size:10px;">{{ t.category }}</span>
                 </div>
-                <div style="font-size:12px; color:var(--app-muted); margin-bottom:4px;" class="truncate">
-                  {{ t.content }}
+                <div style="display:flex; align-items:center; justify-content:space-between; font-size:12px; color:var(--app-muted); margin-bottom:4px;">
+                  <div class="truncate" style="max-width:200px;">{{ t.content }}</div>
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <span v-if="t.author" class="truncate" style="max-width:120px;">{{ t.author.display_name }}</span>
+                    <span
+                      v-if="t.author && t.author.role"
+                      class="pill"
+                      :class="t.author.role === 'teacher' ? 'badge-blue' : t.author.role === 'student' ? 'badge-amber' : 'badge-gray'"
+                      style="font-size:10px;"
+                    >
+                      {{ t.author.role === 'teacher' ? '老师' : t.author.role === 'student' ? '学生' : '其他' }}
+                    </span>
+                    <span style="font-size:11px; color:var(--app-muted);">{{ t.created_at?.slice(0, 10) }}</span>
+                  </div>
                 </div>
                 <div style="display:flex; flex-wrap:wrap; gap:4px;">
                   <span v-for="tag in t.tags" :key="tag" class="tag">{{ tag }}</span>
@@ -114,7 +133,7 @@ import InteractionsPanel from "../../components/InteractionsPanel.vue";
 
 
 const topics = ref<any[]>([]);
-const filters = reactive({ keyword: "" });
+const filters = reactive({ keyword: "", tag: "" });
 const reactFilter = ref<"all" | "liked" | "favorited">("all");
 const page = ref(1);
 const pageSize = ref(5);
@@ -131,6 +150,7 @@ async function load() {
   const resp = await axios.get("/api/forum/topics", {
     params: {
       keyword: filters.keyword || undefined,
+      tag: filters.tag || undefined,
       like_only: reactFilter.value === "liked" ? 1 : undefined,
       favorite_only: reactFilter.value === "favorited" ? 1 : undefined,
       page: page.value,

@@ -89,6 +89,7 @@ def list_resources():
     q = Resource.query.filter_by(review_status=ReviewStatus.approved.value)
     category = (request.args.get("category") or "").strip()
     keyword = (request.args.get("keyword") or "").strip()
+    tag = (request.args.get("tag") or "").strip()
     like_only = (request.args.get("like_only") or "").strip() in {"1", "true", "yes"}
     favorite_only = (request.args.get("favorite_only") or "").strip() in {"1", "true", "yes"}
     page = max(int(request.args.get("page", 1)), 1)
@@ -99,6 +100,8 @@ def list_resources():
         q = q.filter_by(category=category)
     if keyword:
         q = q.filter(Resource.title.contains(keyword) | Resource.description.contains(keyword))
+    if tag:
+        q = q.filter(Resource.tags_json.contains(tag))
 
     if like_only or favorite_only:
         if not request.headers.get("Authorization"):
