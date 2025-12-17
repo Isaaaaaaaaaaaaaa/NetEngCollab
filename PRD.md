@@ -16,9 +16,9 @@
 
 ### 1.2 角色与权限
 
-- 学生：浏览全部教师项目；维护个人画像；对项目发起申请；处理教师邀请；查看合作项目进度；私信沟通；上传/浏览资源。
-- 教师：仅管理自己发布的项目；浏览学生画像；对学生发起邀请；处理学生申请；查看合作项目与进度；私信沟通。
-- 管理员：总览统计；人员概览（筛选、查看、重置密码）；项目概览（查看全部项目及选择情况）；合作记录全局查看与异常释放。
+- 学生：浏览全部教师项目；维护个人画像；对项目发起申请；处理教师邀请；查看合作项目进度；私信沟通；上传/浏览资源；参与讨论区与组队互助。
+- 教师：仅管理自己发布的项目；浏览学生画像；对学生发起邀请；处理学生申请；查看合作项目与进度；维护教师画像；私信沟通。
+- 管理员：总览统计；人员概览（筛选、查看、重置密码、批量创建账号）；项目概览（查看全部项目及选择情况并可重置选择）；内容兜底治理（资源库/讨论区/组队互助删除违规内容）；全局消息与数据分析。
 
 ### 1.3 功能需求
 
@@ -41,9 +41,9 @@
 - 进度更新：发布文字更新，可附带文件。
 
 （4）资源共享与交流
-- 资源中心：上传与下载资源文件，支持分类与标签。
-- 站内私信：教师与学生一对一会话、发送消息与附件。
-- 讨论区/组队互助：支持发布话题与回复，支持组队需求发布。
+- 资源中心：上传与下载资源文件，支持分类与标签、点赞、收藏与评论，作者和管理员可对资源进行编辑与删除。
+- 站内私信：教师与学生一对一会话、发送消息与附件，支持自动回复设置，并通过消息提醒展示新私信。
+- 讨论区/组队互助：支持发布话题与回复、按标签检索、显示发起者身份，作者与管理员可编辑与删除组队/话题信息。
 
 （5）管理员功能
 - 总览：展示用户数、项目数、资源数等关键指标，并给出待审核项目/资源、待激活账号的提醒卡片。
@@ -126,14 +126,14 @@
 
 #### 2.3.3 队员 2：学生侧相关数据
 
-- 学生画像：`student_profiles`，字段：`major`（专业）、`grade`（年级：大一/大二/大三/大四）、`class_name`（班级）、`direction`（兼容字段）、`skills_json`、`interests_json`、`project_links_json`、`experiences_json`、`weekly_hours`、`prefer_local`、`accept_cross`、`visibility`。
-- 私信：`conversations`（唯一约束教师+学生对）与 `messages`（含 `file_id`、`is_read`）。
+- 学生画像：`student_profiles`，字段：`major`（专业）、`grade`（年级：大一/大二/大三/大四）、`class_name`（班级）、`direction`（兼容字段）、`skills_json`、`interests_json`、`project_links_json`、`experiences_json`、`weekly_hours`、`prefer_local`、`accept_cross`、`visibility`、`resume_file_id`、`auto_reply`。
+- 私信：`conversations`（唯一约束教师+学生对）与 `messages`（含 `file_id`、`is_read`），新私信会写入 `notifications` 以便统一提醒。
 
 #### 2.3.4 队员 3：管理与扩展数据
 
-- 资源库：`resources` + `files`，`resources.file_id` 关联文件存储元数据。
-- 通知：`notifications`，用于合作申请/处理等系统消息。
-- 讨论/组队：`forum_topics`、`forum_replies`、`teamup_posts`。
+- 资源库：`resources` + `files`，`resources.file_id` 关联文件存储元数据，并通过 `tags_json` 与 `review_status` 支持分类与状态控制。
+- 通知：`notifications`，用于合作申请/处理、合作确认、匹配推荐更新、评论与回复、新私信等系统消息。
+- 讨论/组队：`forum_topics`、`forum_replies`、`teamup_posts`，均支持标签字段，便于按方向/竞赛类型筛选。
 
 ### 2.4 界面设计（按四人分工展开）
 
@@ -176,7 +176,7 @@
   - 响应请求：`POST /api/cooperation/requests/<id>/respond`。
   - 自动确认：当教师与学生状态均为 `accepted` 时，`final_status` 更新为 `confirmed`，并生成 `cooperation_projects`。
   - 规则落地：学生申请时教师同意立即确认；教师邀请时学生同意立即确认。
-- 通知：合作申请/处理会写入 `notifications`，用于前端提醒展示。
+- 通知：合作申请/处理、合作确认、评论与回复、新私信、匹配推荐更新等会写入 `notifications`，由统一的消息提醒组件展示，并支持查看历史记录。
 
 ### 3.2 队员 1：教师端项目管理与申请处理
 
@@ -195,7 +195,7 @@
 
 ### 3.4 队员 3：管理员总览、人员/项目概览与质量保障
 
-- 总览统计：`GET /api/admin/stats` 返回用户数、项目数、资源数，并配合待办接口展示待审核项目/资源与待激活账号数量。
+- 总览统计：`GET /api/admin/stats` 返回用户数、项目数、资源数；`GET /api/admin/analytics` 返回近 14 天项目发布与私信沟通活跃度、热门研究方向与竞赛参与趋势，作为总览与“数据分析”页面的数据来源。
 - 人员概览：`GET /api/admin/users?role=...&keyword=...` 支持按角色筛选与按学号/工号或姓名搜索；`GET /api/admin/users/<id>` 返回学生画像与教师项目统计；`POST /api/admin/users/<id>/set-password` 支持重置密码；`POST /api/admin/users/batch-create` 支持批量创建账号。
 - 项目概览：`GET /api/admin/projects` 返回全部项目、发布教师信息、选择该项目的学生及其状态；管理员可通过 `POST /api/admin/cooperations/<id>/reset` 重置某条合作请求以允许重新双选。
 - 数据分析：`GET /api/admin/analytics` 返回活跃度、热门标签与竞赛参与趋势数据，由“数据分析”页面统一展示。

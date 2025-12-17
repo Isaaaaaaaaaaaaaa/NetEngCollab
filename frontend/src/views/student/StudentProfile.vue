@@ -69,8 +69,29 @@
                     </el-form-item>
                   </el-col>
                   <el-col :xs="24" :sm="8">
-                    <el-form-item label="">
-                      <div />
+                    <el-form-item label="简历文件（可选）">
+                      <div class="inline-form">
+                        <input ref="resumeInput" type="file" style="font-size:11px; color:var(--app-muted);" @change="onSelectResume" />
+                        <span v-if="resumeName" class="truncate" style="font-size:11px;">{{ resumeName }}</span>
+                        <el-button
+                          v-if="form.resume_file_id"
+                          size="small"
+                          text
+                          type="primary"
+                          @click="downloadResume"
+                        >
+                          下载
+                        </el-button>
+                        <el-button
+                          v-if="form.resume_file_id"
+                          size="small"
+                          text
+                          type="danger"
+                          @click="removeResume"
+                        >
+                          移除
+                        </el-button>
+                      </div>
                     </el-form-item>
                   </el-col>
                 </el-row>
@@ -237,7 +258,9 @@ const form = reactive<any>({
   weekly_hours: null as number | null,
   prefer_local: false,
   accept_cross: true,
-  visibility: "public"
+  visibility: "public",
+  resume_file_id: null as number | null,
+  resume_file: null as any
 });
 
 const interestsInput = ref("");
@@ -247,6 +270,8 @@ const linkInput = ref("");
 const savedHint = ref(false);
 const activeTab = ref<"profile" | "experiences">("profile");
 const editingExpIndex = ref<number | null>(null);
+const resumeInput = ref<HTMLInputElement | null>(null);
+const resumeName = ref("");
 
 const expForm = reactive<any>({
   type: "科研",
@@ -265,6 +290,11 @@ async function load() {
       form.major = form.direction;
     }
     interestsInput.value = (form.interests || []).join(", ");
+    if (form.resume_file) {
+      resumeName.value = form.resume_file.original_name || "";
+    } else {
+      resumeName.value = "";
+    }
   } catch (e) {
   }
 }
@@ -325,6 +355,42 @@ function removeLink(l: string) {
     form.project_links.splice(idx, 1);
     syncProfile(false);
   }
+}
+
+
+async function onSelectResume(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file) return;
+  const fd = new FormData();
+  fd.append("file", file);
+  const resp = await axios.post("/api/files", fd, {
+    headers: { "Content-Type": "multipart/form-data" }
+  });
+  form.resume_file_id = resp.data.file_id;
+  resumeName.value = file.name;
+  await syncProfile(false);
+}
+
+
+async function downloadResume() {
+  if (!form.resume_file_id) return;
+  const resp = await axios.get(`/api/files/${form.resume_file_id}`, { responseType: "blob" });
+  const url = window.URL.createObjectURL(resp.data);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = resumeName.value || "resume.pdf";
+  a.click();
+  window.URL.revokeObjectURL(url);
+}
+
+
+async function removeResume() {
+  if (!form.resume_file_id) return;
+  form.resume_file_id = null;
+  resumeName.value = "";
+  await syncProfile(false);
 }
 
 

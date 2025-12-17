@@ -206,6 +206,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import axios from "axios";
+import { ElMessage } from "element-plus";
 
 
 const users = ref<any[]>([]);
@@ -338,7 +339,7 @@ async function batchCreate() {
   const created = resp.data?.created || [];
   batchVisible.value = false;
   batchText.value = "";
-  alert(`已创建 ${created.length} 个账号`);
+  ElMessage.success(`已创建 ${created.length} 个账号`);
   page.value = 1;
   selectedId.value = null;
   currentDetail.value = null;

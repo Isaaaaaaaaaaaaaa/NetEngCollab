@@ -10,15 +10,21 @@ from ..models import (
     Comment,
     CooperationRequest,
     CooperationStatus,
+    File,
+    ForumTopic,
     Reaction,
+    Resource,
     ReviewStatus,
     Role,
     StudentProfile,
+    TeacherProfile,
     TeacherPost,
+    TeamupPost,
     User,
     Visibility,
 )
 from ..utils import ensure_list_str, json_dumps, json_loads, now_utc
+from ..services import push_notification
 
 
 bp = Blueprint("posts", __name__)
@@ -117,6 +123,79 @@ def list_teacher_posts():
 
     posts = q.order_by(TeacherPost.created_at.desc()).limit(2000).all()
 
+    def project_level_from_tags(tags_list):
+        tags_text = " ".join([str(x) for x in (tags_list or []) if x])
+        if "国家级" in tags_text:
+            return "国家级"
+        if "省级" in tags_text:
+            return "省级"
+        if "校级" in tags_text:
+            return "校级"
+        if "企业" in tags_text:
+            return "企业合作"
+        if "核心期刊" in tags_text:
+            return "核心期刊"
+        return "普通"
+
+    def success_rate_for_teacher(teacher_id: int):
+        confirmed = CooperationRequest.query.filter_by(
+            teacher_user_id=teacher_id,
+            final_status=CooperationStatus.confirmed.value,
+        ).count()
+        rejected = CooperationRequest.query.filter_by(
+            teacher_user_id=teacher_id,
+            final_status=CooperationStatus.rejected.value,
+        ).count()
+        decided = confirmed + rejected
+        if decided <= 0:
+            return None, confirmed
+        return confirmed / decided, confirmed
+
+    teacher_cache = {}
+
+    def teacher_info(teacher_id: int):
+        if teacher_id in teacher_cache:
+            return teacher_cache[teacher_id]
+        teacher = User.query.get(teacher_id)
+        if not teacher:
+            teacher_cache[teacher_id] = None
+            return None
+        p = TeacherProfile.query.get(teacher_id)
+        rate, confirmed = success_rate_for_teacher(teacher_id)
+        published_posts = TeacherPost.query.filter_by(teacher_user_id=teacher_id).count()
+        recent_reqs = (
+            CooperationRequest.query.filter_by(
+                teacher_user_id=teacher_id,
+                final_status=CooperationStatus.confirmed.value,
+            )
+            .order_by(CooperationRequest.created_at.desc())
+            .limit(3)
+            .all()
+        )
+        recent_titles = []
+        for r in recent_reqs:
+            if not r.post_id:
+                continue
+            post = TeacherPost.query.get(int(r.post_id))
+            if post and post.title:
+                recent_titles.append(post.title)
+
+        info = {
+            "id": teacher.id,
+            "display_name": teacher.display_name,
+            "title": (p.title if p else None),
+            "organization": (p.organization if p else None),
+            "research_tags": json_loads(p.research_tags_json, []) if p else [],
+            "stats": {
+                "published_posts": published_posts,
+                "confirmed_projects": confirmed,
+                "success_rate": rate,
+            },
+            "recent_achievements": recent_titles,
+        }
+        teacher_cache[teacher_id] = info
+        return info
+
     items = []
     for p in posts:
         if viewer_role != Role.admin.value and p.review_status != ReviewStatus.approved.value:
@@ -129,11 +208,12 @@ def list_teacher_posts():
             continue
         if tech and tech not in techs:
             continue
-        teacher = User.query.get(p.teacher_user_id)
+        tinfo = teacher_info(p.teacher_user_id)
         items.append(
             {
                 "id": p.id,
                 "post_type": p.post_type,
+                "project_level": project_level_from_tags(tags),
                 "title": p.title,
                 "content": p.content,
                 "tech_stack": techs,
@@ -144,12 +224,7 @@ def list_teacher_posts():
                 "contact": p.contact,
                 "deadline": p.deadline.isoformat() if p.deadline else None,
                 "attachment_file_id": p.attachment_file_id,
-                "teacher": {
-                    "id": teacher.id,
-                    "display_name": teacher.display_name,
-                }
-                if teacher
-                else None,
+                "teacher": tinfo,
                 "created_at": p.created_at.isoformat(),
                 "updated_at": p.updated_at.isoformat(),
             }
@@ -270,6 +345,11 @@ def list_students():
         interests = json_loads(p.interests_json, []) if p else []
         experiences = json_loads(p.experiences_json or "[]", []) if p else []
         project_links = json_loads(p.project_links_json, []) if p else []
+        resume_file = None
+        if p and p.resume_file_id:
+            f = File.query.get(int(p.resume_file_id))
+            if f:
+                resume_file = {"id": f.id, "original_name": f.original_name, "size_bytes": f.size_bytes}
 
         if direction and p and (p.direction or "") != direction:
             continue
@@ -296,12 +376,48 @@ def list_students():
             if keyword not in text:
                 continue
 
+        def skill_weight(level_text: str) -> float:
+            t = (level_text or "").strip()
+            if "精通" in t or "熟练" in t:
+                return 5.0
+            if "掌握" in t or "较熟练" in t:
+                return 4.0
+            if "了解" in t or "入门" in t:
+                return 2.5
+            return 3.0
+
+        skill_points = 0.0
+        for s in skills:
+            if not isinstance(s, dict):
+                continue
+            skill_points += skill_weight(str(s.get("level") or ""))
+        skill_points = min(skill_points, 35.0)
+
+        exp_points = min(len(experiences) * 7.0, 28.0)
+
+        weekly_hours = (p.weekly_hours if p else None) or 0
+        time_points = min(max(float(weekly_hours), 0.0), 20.0) / 20.0 * 10.0
+
+        link_points = min(len(project_links) * 2.0, 6.0)
+
+        score = int(min(100.0, round(20.0 + skill_points + exp_points + time_points + link_points)))
+        if score >= 85:
+            score_level = "A"
+        elif score >= 70:
+            score_level = "B"
+        elif score >= 55:
+            score_level = "C"
+        else:
+            score_level = "D"
+
         items.append(
             {
                 "user": {
                     "id": user.id,
                     "display_name": user.display_name,
                 },
+                "skill_score": score,
+                "skill_score_level": score_level,
                 "major": (p.major if p else None),
                 "grade": (p.grade if p else None),
                 "class_name": (p.class_name if p else None),
@@ -310,6 +426,7 @@ def list_students():
                 "interests": interests,
                 "project_links": project_links,
                 "experiences": experiences,
+                "resume_file": resume_file,
                 "weekly_hours": (p.weekly_hours if p else None),
                 "prefer_local": (p.prefer_local if p else False),
                 "accept_cross": (p.accept_cross if p else True),
@@ -329,6 +446,11 @@ def get_my_student_profile():
     p = StudentProfile.query.get(user.id)
     if not p:
         return jsonify({"message": "未创建"}), 404
+    resume_file = None
+    if p.resume_file_id:
+        f = File.query.get(int(p.resume_file_id))
+        if f:
+            resume_file = {"id": f.id, "original_name": f.original_name, "size_bytes": f.size_bytes}
     return jsonify(
         {
             "major": p.major,
@@ -339,6 +461,8 @@ def get_my_student_profile():
             "project_links": json_loads(p.project_links_json, []),
             "interests": json_loads(p.interests_json, []),
             "experiences": json_loads(p.experiences_json or "[]", []),
+            "resume_file": resume_file,
+            "resume_file_id": p.resume_file_id,
             "weekly_hours": p.weekly_hours,
             "prefer_local": p.prefer_local,
             "accept_cross": p.accept_cross,
@@ -367,10 +491,51 @@ def upsert_my_student_profile():
     p.project_links_json = json_dumps(data.get("project_links") or [])
     p.interests_json = json_dumps(ensure_list_str(data.get("interests")))
     p.experiences_json = json_dumps(data.get("experiences") or [])
+    if "resume_file_id" in data:
+        p.resume_file_id = int(data.get("resume_file_id")) if data.get("resume_file_id") else None
     p.weekly_hours = data.get("weekly_hours")
     p.prefer_local = bool(data.get("prefer_local"))
     p.accept_cross = bool(data.get("accept_cross", True))
     p.visibility = data.get("visibility") or Visibility.public.value
+    p.updated_at = now_utc()
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@bp.get("/teacher-profile")
+@jwt_required()
+def get_my_teacher_profile():
+    user = User.query.get(int(get_jwt_identity()))
+    if not user or user.role != Role.teacher.value:
+        return jsonify({"message": "无权限"}), 403
+    p = TeacherProfile.query.get(user.id)
+    if not p:
+        return jsonify({"title": None, "organization": None, "bio": None, "research_tags": []})
+    return jsonify(
+        {
+            "title": p.title,
+            "organization": p.organization,
+            "bio": p.bio,
+            "research_tags": json_loads(p.research_tags_json, []) or [],
+        }
+    )
+
+
+@bp.put("/teacher-profile")
+@jwt_required()
+def upsert_my_teacher_profile():
+    user = User.query.get(int(get_jwt_identity()))
+    if not user or user.role != Role.teacher.value:
+        return jsonify({"message": "无权限"}), 403
+    data = request.get_json(force=True)
+    p = TeacherProfile.query.get(user.id)
+    if not p:
+        p = TeacherProfile(user_id=user.id, updated_at=now_utc())
+        db.session.add(p)
+    p.title = (data.get("title") or None)
+    p.organization = (data.get("organization") or None)
+    p.bio = (data.get("bio") or None)
+    p.research_tags_json = json_dumps(ensure_list_str(data.get("research_tags")))
     p.updated_at = now_utc()
     db.session.commit()
     return jsonify({"ok": True})
@@ -406,6 +571,44 @@ def add_comment():
     )
     db.session.add(c)
     db.session.commit()
+
+    target_author_id = None
+    if target_type == "teacher_post":
+        post = TeacherPost.query.get(int(target_id))
+        if post:
+            target_author_id = post.teacher_user_id
+    elif target_type == "resource":
+        res = Resource.query.get(int(target_id))
+        if res:
+            target_author_id = res.uploader_user_id
+    elif target_type == "forum_topic":
+        topic = ForumTopic.query.get(int(target_id))
+        if topic:
+            target_author_id = topic.author_user_id
+    elif target_type == "teamup_post":
+        post = TeamupPost.query.get(int(target_id))
+        if post:
+            target_author_id = post.author_user_id
+
+    if parent_id:
+        parent = Comment.query.get(parent_id)
+        if parent and parent.author_user_id != user.id:
+            summary = f"{user.display_name} 回复了你：{content[:60]}"
+            push_notification(
+                user_id=parent.author_user_id,
+                notif_type="comment_reply",
+                title="评论有新的回复",
+                payload={"target_type": target_type, "target_id": int(target_id), "summary": summary},
+            )
+    elif target_author_id and target_author_id != user.id:
+        summary = f"{user.display_name} 评论了你的内容：{content[:60]}"
+        push_notification(
+            user_id=target_author_id,
+            notif_type="comment_new",
+            title="内容收到新的评论",
+            payload={"target_type": target_type, "target_id": int(target_id), "summary": summary},
+        )
+
     return jsonify({"id": c.id})
 
 

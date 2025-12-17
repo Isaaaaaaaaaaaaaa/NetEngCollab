@@ -37,10 +37,6 @@
           </el-select>
 
           <el-input v-model="filters.tech" size="small" placeholder="技术栈，如 Python" clearable class="filter-item" />
-
-          <el-tooltip content="点击教师姓名可发起私信沟通" placement="top">
-            <span class="filter-help">如何私信？</span>
-          </el-tooltip>
         </div>
       </div>
     </div>
@@ -71,6 +67,13 @@
               <template #default="scope">
                 <span class="pill" :class="scope.row.post_type === 'competition' ? 'badge-amber' : 'badge-blue'">
                   {{ typeLabel(scope.row.post_type) }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column label="级别" width="90" align="center">
+              <template #default="scope">
+                <span class="pill" :class="levelClass(scope.row.project_level)" style="font-size: 11px;">
+                  {{ scope.row.project_level || '普通' }}
                 </span>
               </template>
             </el-table-column>
@@ -106,7 +109,25 @@
                   style="font-size:12px;"
                   @click.stop="chat(scope.row)"
                 >
-                  <el-tooltip content="点击教师姓名可发起私信沟通" placement="top">
+                  <el-tooltip placement="top">
+                    <template #content>
+                      <div style="max-width: 260px; font-size: 12px; line-height: 1.4;">
+                        <div v-if="scope.row.teacher.title || scope.row.teacher.organization" style="font-weight: 600;">
+                          {{ [scope.row.teacher.title, scope.row.teacher.organization].filter(Boolean).join(' · ') }}
+                        </div>
+                        <div v-if="scope.row.teacher.stats" style="margin-top: 4px;">
+                          <span v-if="scope.row.teacher.stats.success_rate != null">
+                            组队成功率：{{ Math.round(scope.row.teacher.stats.success_rate * 100) }}%
+                          </span>
+                          <span v-else>组队成功率：暂无</span>
+                          <span style="margin-left: 8px;">往期合作：{{ scope.row.teacher.stats.confirmed_projects ?? 0 }} 个</span>
+                        </div>
+                        <div v-if="scope.row.teacher.recent_achievements?.length" style="margin-top: 4px; color: var(--app-muted);">
+                          往期指导：{{ scope.row.teacher.recent_achievements.join('、') }}
+                        </div>
+                        <div style="margin-top: 4px; color: var(--app-muted);">点击教师姓名可发起私信沟通</div>
+                      </div>
+                    </template>
                     <span>{{ scope.row.teacher.display_name }}</span>
                   </el-tooltip>
                 </el-link>
@@ -194,6 +215,7 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import axios from "axios";
+import { ElMessage } from "element-plus";
 import InteractionsPanel from "../../components/InteractionsPanel.vue";
 
 
@@ -213,6 +235,17 @@ function typeLabel(t: string) {
   if (t === "competition") return "学科竞赛";
   if (t === "innovation") return "大创项目";
   return "科研项目";
+}
+
+
+function levelClass(level?: string) {
+  const l = (level || "普通").trim();
+  if (l.includes("国家")) return "badge-amber";
+  if (l.includes("省")) return "badge-blue";
+  if (l.includes("校")) return "badge-green";
+  if (l.includes("核心")) return "badge-amber";
+  if (l.includes("企业")) return "badge-blue";
+  return "badge-gray";
 }
 
 
@@ -307,7 +340,7 @@ async function apply(p: any) {
     student_user_id: studentId
   });
   await loadMyRequests();
-  alert("已提交合作申请，等待教师确认");
+  ElMessage.success("已提交合作申请，等待教师确认");
 }
 
 
@@ -412,13 +445,6 @@ watch(
 
 .filter-item {
   width: 160px;
-}
-
-.filter-help {
-  font-size: 12px;
-  color: var(--app-muted);
-  cursor: help;
-  user-select: none;
 }
 
 .proj-main {

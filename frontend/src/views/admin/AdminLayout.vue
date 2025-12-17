@@ -24,6 +24,19 @@
           <router-link :to="{ name: 'admin-projects' }">
             <el-button text size="small">项目概览</el-button>
           </router-link>
+          <router-link :to="{ name: 'admin-resources' }">
+            <el-button text size="small">资源库</el-button>
+          </router-link>
+          <router-link :to="{ name: 'admin-forum' }">
+            <el-button text size="small">讨论区</el-button>
+          </router-link>
+          <router-link :to="{ name: 'admin-teamup' }">
+            <el-button text size="small">组队互助</el-button>
+          </router-link>
+          <router-link :to="{ name: 'admin-messages' }">
+            <el-button text size="small">私信</el-button>
+          </router-link>
+          <notifications-bell />
           <el-button size="small" type="primary" plain @click="logout">退出</el-button>
         </el-space>
       </div>
@@ -39,6 +52,7 @@
 <script setup lang="ts">
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../../store/auth";
+import NotificationsBell from "../../components/NotificationsBell.vue";
 
 
 const auth = useAuthStore();

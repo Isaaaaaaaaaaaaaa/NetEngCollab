@@ -71,6 +71,7 @@ def login():
                 "username": user.username,
                 "role": user.role,
                 "display_name": user.display_name,
+                "must_change_password": getattr(user, "must_change_password", False),
             },
         }
     )
@@ -90,5 +91,32 @@ def me():
             "display_name": user.display_name,
             "email": user.email,
             "phone": user.phone,
+            "must_change_password": getattr(user, "must_change_password", False),
         }
     )
+
+
+@bp.post("/change-password")
+@jwt_required()
+def change_password():
+    from ..utils import hash_password, verify_password
+
+    user = User.query.get(int(get_jwt_identity()))
+    if not user or not user.is_active:
+        return {"message": "未登录"}, 401
+
+    data = request.get_json(force=True)
+    old_password = data.get("old_password") or ""
+    new_password = data.get("new_password") or ""
+    if not old_password or not new_password:
+        return jsonify({"message": "参数不完整"}), 400
+
+    if not verify_password(old_password, user.password_hash):
+        return jsonify({"message": "原密码错误"}), 400
+    if new_password == "123456":
+        return jsonify({"message": "新密码不能为默认初始密码"}), 400
+
+    user.password_hash = hash_password(new_password)
+    user.must_change_password = False
+    db.session.commit()
+    return jsonify({"ok": True})

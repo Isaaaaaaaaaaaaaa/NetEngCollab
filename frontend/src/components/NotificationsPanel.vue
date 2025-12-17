@@ -14,7 +14,11 @@ const shown = ref<Set<number>>(new Set());
 
 async function load() {
   try {
-    const resp = await axios.get("/api/notifications");
+    try {
+      await axios.post("/api/match/check");
+    } catch {
+    }
+    const resp = await axios.get("/api/notifications", { params: { page: 1, page_size: 100 } });
     const unread = resp.data.items.filter((x: any) => !x.is_read);
     for (const n of unread) {
       if (shown.value.has(n.id)) continue;
@@ -26,11 +30,6 @@ async function load() {
         duration: 5000,
         type: "info"
       });
-      try {
-        await axios.post(`/api/notifications/${n.id}/read`);
-      } catch {
-        // ignore
-      }
     }
   } catch (e) {
     // ignore
@@ -40,6 +39,6 @@ async function load() {
 
 onMounted(() => {
   load();
-  setInterval(load, 30000);
+  setInterval(load, 15000);
 });
 </script>

@@ -56,6 +56,14 @@
                     </div>
                   </template>
                 </el-table-column>
+                <el-table-column label="技能评分" width="100" align="center">
+                  <template #default="scope">
+                    <span v-if="scope.row.skill_score != null" class="pill" :class="scoreClass(scope.row.skill_score)" style="font-size:11px;">
+                      {{ scope.row.skill_score }}
+                    </span>
+                    <span v-else style="font-size:11px; color:var(--app-muted);">-</span>
+                  </template>
+                </el-table-column>
                 <el-table-column label="每周时间" width="100" align="center">
                   <template #default="scope">
                     <span v-if="scope.row.weekly_hours" style="font-size:12px;">每周 {{ scope.row.weekly_hours }} 小时</span>
@@ -100,7 +108,12 @@
               <div>
                 <div style="font-size:15px; font-weight:600;">{{ selectedStudent.user.display_name }}</div>
               </div>
-              <div v-if="selectedStudent.weekly_hours" class="pill badge-green">每周 {{ selectedStudent.weekly_hours }} 小时</div>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <div v-if="selectedStudent.skill_score != null" class="pill" :class="scoreClass(selectedStudent.skill_score)">
+                  技能评分 {{ selectedStudent.skill_score }}
+                </div>
+                <div v-if="selectedStudent.weekly_hours" class="pill badge-green">每周 {{ selectedStudent.weekly_hours }} 小时</div>
+              </div>
             </div>
 
             <div style="display:flex; flex-wrap:wrap; gap:10px; font-size:12px; color:var(--app-text);">
@@ -167,6 +180,17 @@
               </li>
             </ul>
 
+            <div>
+              简历文件：
+              <span v-if="!selectedStudent.resume_file" style="color:var(--app-muted);">未上传</span>
+            </div>
+            <div v-if="selectedStudent.resume_file" style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+              <span class="truncate" style="max-width:260px; font-size:12px;">{{ selectedStudent.resume_file.original_name }}</span>
+              <el-button size="small" text type="primary" @click.stop="downloadResume(selectedStudent.resume_file)">
+                下载
+              </el-button>
+            </div>
+
             <div style="margin-top:6px;">
               <div style="font-size:12px; color:var(--app-muted); margin-bottom:4px;">选择合作项目并发送邀请</div>
               <el-select
@@ -214,6 +238,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import axios from "axios";
+import { ElMessage } from "element-plus";
 
 
 const students = ref<any[]>([]);
@@ -293,7 +318,7 @@ async function invite(s: any) {
     student_user_id: s.user.id
   });
   await loadCurrentRequest();
-  alert("已发送合作邀请，等待学生确认");
+  ElMessage.success("已发送合作邀请，等待学生确认");
 }
 
 
@@ -304,7 +329,7 @@ async function chat(s: any) {
     student_user_id: s.user.id,
     content: "你好，我对你的技能很感兴趣，方便进一步交流吗？"
   });
-  alert("已发送一条私信");
+  ElMessage.success("已发送一条私信");
 }
 
 
@@ -349,6 +374,26 @@ function statusClass(r: any) {
   if (r.final_status === "confirmed") return "badge-green";
   if (r.final_status === "rejected") return "badge-amber";
   return "badge-blue";
+}
+
+
+function scoreClass(score: number) {
+  if (score >= 85) return "badge-green";
+  if (score >= 70) return "badge-blue";
+  if (score >= 55) return "badge-amber";
+  return "badge-gray";
+}
+
+
+async function downloadResume(file: any) {
+  if (!file || !file.id) return;
+  const resp = await axios.get(`/api/files/${file.id}`, { responseType: "blob" });
+  const url = window.URL.createObjectURL(resp.data);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = file.original_name || "resume";
+  a.click();
+  window.URL.revokeObjectURL(url);
 }
 
 

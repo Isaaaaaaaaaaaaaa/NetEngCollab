@@ -105,6 +105,65 @@ def _ensure_schema():
         ensure_column("grade", "TEXT", "VARCHAR(32)")
         ensure_column("class_name", "TEXT", "VARCHAR(64)")
 
+    def ensure_student_profiles_resume_and_auto_reply():
+        table = "student_profiles"
+
+        def ensure_column(col: str, sqlite_type: str, mysql_type: str):
+            if dialect == "sqlite":
+                if has_column_sqlite(table, col):
+                    return
+                _exec(f"ALTER TABLE {table} ADD COLUMN {col} {sqlite_type}")
+                return
+
+            if dialect in {"mysql", "mariadb"}:
+                if has_column_mysql(table, col):
+                    return
+                _exec(f"ALTER TABLE {table} ADD COLUMN {col} {mysql_type} NULL")
+                return
+
+        ensure_column("resume_file_id", "INTEGER", "INT")
+        ensure_column("auto_reply", "TEXT", "VARCHAR(255)")
+
+    def ensure_teacher_profiles_auto_reply_and_basic():
+        table = "teacher_profiles"
+
+        def ensure_column(col: str, sqlite_type: str, mysql_type: str):
+            if dialect == "sqlite":
+                if has_column_sqlite(table, col):
+                    return
+                _exec(f"ALTER TABLE {table} ADD COLUMN {col} {sqlite_type}")
+                return
+
+            if dialect in {"mysql", "mariadb"}:
+                if has_column_mysql(table, col):
+                    return
+                _exec(f"ALTER TABLE {table} ADD COLUMN {col} {mysql_type} NULL")
+                return
+
+        ensure_column("title", "TEXT", "VARCHAR(64)")
+        ensure_column("organization", "TEXT", "VARCHAR(128)")
+        ensure_column("bio", "TEXT", "TEXT")
+        ensure_column("research_tags_json", "TEXT", "TEXT")
+        ensure_column("auto_reply", "TEXT", "VARCHAR(255)")
+
+    def ensure_users_force_password_change():
+        table = "users"
+
+        def ensure_column(col: str, sqlite_type: str, mysql_type: str):
+            if dialect == "sqlite":
+                if has_column_sqlite(table, col):
+                    return
+                _exec(f"ALTER TABLE {table} ADD COLUMN {col} {sqlite_type}")
+                return
+
+            if dialect in {"mysql", "mariadb"}:
+                if has_column_mysql(table, col):
+                    return
+                _exec(f"ALTER TABLE {table} ADD COLUMN {col} {mysql_type} NOT NULL DEFAULT 0")
+                return
+
+        ensure_column("must_change_password", "INTEGER", "TINYINT(1)")
+
     try:
         ensure_comments_parent_comment_id()
     except Exception:
@@ -117,5 +176,20 @@ def _ensure_schema():
 
     try:
         ensure_student_profiles_basic_info()
+    except Exception:
+        pass
+
+    try:
+        ensure_student_profiles_resume_and_auto_reply()
+    except Exception:
+        pass
+
+    try:
+        ensure_teacher_profiles_auto_reply_and_basic()
+    except Exception:
+        pass
+
+    try:
+        ensure_users_force_password_change()
     except Exception:
         pass

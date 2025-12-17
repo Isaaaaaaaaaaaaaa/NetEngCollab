@@ -34,6 +34,36 @@
       </el-col>
     </el-row>
 
+    <el-card class="app-card" shadow="never" style="margin-top: 14px;">
+      <template #header>
+        <div class="page-subtitle">我的教师信息</div>
+      </template>
+      <el-form :model="profile" label-position="top" size="small">
+        <el-row :gutter="12">
+          <el-col :xs="24" :sm="12">
+            <el-form-item label="职称">
+              <el-input v-model="profile.title" placeholder="如：副教授" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="12">
+            <el-form-item label="单位/团队">
+              <el-input v-model="profile.organization" placeholder="如：网络安全实验室" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="研究方向标签（逗号分隔）">
+          <el-input v-model="researchTagsInput" placeholder="如：网络安全, 深度学习" />
+        </el-form-item>
+        <el-form-item label="个人简介">
+          <el-input v-model="profile.bio" type="textarea" :rows="3" placeholder="简要描述研究方向、指导方式等" />
+        </el-form-item>
+        <div style="text-align:right;">
+          <el-button size="small" type="primary" :disabled="saving" @click="saveProfile">保存</el-button>
+        </div>
+      </el-form>
+      <div v-if="savedHint" style="margin-top:8px; font-size:12px; color:#16a34a;">已保存，学生侧展示将同步更新。</div>
+    </el-card>
+
     <el-row :gutter="16" class="dash-main" style="margin-top: 16px;">
       <el-col :xs="24" :lg="16">
         <el-card class="app-card dash-card dash-card-recent" shadow="never">
@@ -121,13 +151,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import axios from "axios";
 
 
 const posts = ref<any[]>([]);
 const projects = ref<any[]>([]);
 const requests = ref<any[]>([]);
+
+const profile = reactive({
+  title: "",
+  organization: "",
+  bio: ""
+});
+const researchTagsInput = ref("");
+const saving = ref(false);
+const savedHint = ref(false);
 
 const postsPage = ref(1);
 const postsPageSize = 5;
@@ -170,6 +209,42 @@ async function loadRequests() {
 }
 
 
+async function loadProfile() {
+  try {
+    const resp = await axios.get("/api/teacher-profile");
+    profile.title = resp.data?.title || "";
+    profile.organization = resp.data?.organization || "";
+    profile.bio = resp.data?.bio || "";
+    researchTagsInput.value = (resp.data?.research_tags || []).join(", ");
+  } catch (e) {
+  }
+}
+
+
+async function saveProfile() {
+  saving.value = true;
+  try {
+    const tags = researchTagsInput.value
+      .split(/[,，]/)
+      .map(x => x.trim())
+      .filter(x => x);
+    await axios.put("/api/teacher-profile", {
+      title: profile.title || null,
+      organization: profile.organization || null,
+      bio: profile.bio || null,
+      research_tags: tags
+    });
+    savedHint.value = true;
+    setTimeout(() => {
+      savedHint.value = false;
+    }, 3000);
+  } catch (e) {
+  } finally {
+    saving.value = false;
+  }
+}
+
+
 function handlePostsPageChange(p: number) {
   postsPage.value = p;
 }
@@ -196,6 +271,7 @@ onMounted(() => {
   loadPosts();
   loadProjects();
   loadRequests();
+  loadProfile();
 });
 </script>
 

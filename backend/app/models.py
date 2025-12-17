@@ -43,6 +43,7 @@ class User(db.Model):
 
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    must_change_password = db.Column(db.Boolean, default=False, nullable=False)
 
 
 class StudentProfile(db.Model):

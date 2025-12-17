@@ -7,6 +7,7 @@ export interface UserInfo {
   username: string;
   role: "student" | "teacher" | "admin";
   display_name: string;
+  must_change_password?: boolean;
 }
 
 
@@ -50,4 +51,3 @@ export const useAuthStore = defineStore("auth", {
     }
   }
 });
-

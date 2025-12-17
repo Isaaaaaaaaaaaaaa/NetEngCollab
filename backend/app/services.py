@@ -1,16 +1,7 @@
 import json
 from typing import Dict, List, Tuple
 
-from .models import (
-    CooperationRequest,
-    CooperationStatus,
-    Notification,
-    ReviewStatus,
-    Role,
-    StudentProfile,
-    TeacherPost,
-    User,
-)
+from .models import CooperationRequest, CooperationStatus, Notification, ReviewStatus, Role, StudentProfile, TeacherPost, User
 from .utils import json_dumps, json_loads, now_utc
 from .extensions import db
 

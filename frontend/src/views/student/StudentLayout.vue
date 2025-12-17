@@ -36,6 +36,7 @@
           <router-link :to="{ name: 'student-messages' }">
             <el-button text size="small">私信</el-button>
           </router-link>
+          <notifications-bell />
           <el-button size="small" type="primary" plain @click="logout">退出</el-button>
         </el-space>
       </div>
@@ -51,6 +52,7 @@
 <script setup lang="ts">
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../../store/auth";
+import NotificationsBell from "../../components/NotificationsBell.vue";
 
 
 const auth = useAuthStore();

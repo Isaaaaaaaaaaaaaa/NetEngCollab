@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from ..extensions import db
-from ..models import Reaction, TeamupPost, User
+from ..models import Comment, Reaction, Role, TeamupPost, User
 from ..utils import ensure_list_str, json_dumps, json_loads, now_utc
 
 
@@ -98,3 +98,51 @@ def create_teamup():
     db.session.add(p)
     db.session.commit()
     return jsonify({"id": p.id})
+
+
+@bp.put("/teamup/<int:post_id>")
+@jwt_required()
+def update_teamup(post_id: int):
+    user = User.query.get(int(get_jwt_identity()))
+    if not user or not user.is_active:
+        return jsonify({"message": "未登录"}), 401
+    p = TeamupPost.query.get(post_id)
+    if not p:
+        return jsonify({"message": "不存在"}), 404
+    if user.role != Role.admin.value and p.author_user_id != user.id:
+        return jsonify({"message": "无权限"}), 403
+
+    data = request.get_json(force=True)
+    title = (data.get("title") or p.title or "").strip()
+    content = (data.get("content") or p.content or "").strip()
+    if not title or not content:
+        return jsonify({"message": "标题/内容不能为空"}), 400
+    p.title = title
+    p.content = content
+    if "post_kind" in data and (data.get("post_kind") or "").strip():
+        p.post_kind = (data.get("post_kind") or p.post_kind).strip()
+    if "needed_roles" in data:
+        p.needed_roles_json = json_dumps(ensure_list_str(data.get("needed_roles")))
+    if "tags" in data:
+        p.tags_json = json_dumps(ensure_list_str(data.get("tags")))
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@bp.delete("/teamup/<int:post_id>")
+@jwt_required()
+def delete_teamup(post_id: int):
+    user = User.query.get(int(get_jwt_identity()))
+    if not user or not user.is_active:
+        return jsonify({"message": "未登录"}), 401
+    p = TeamupPost.query.get(post_id)
+    if not p:
+        return jsonify({"message": "不存在"}), 404
+    if user.role != Role.admin.value and p.author_user_id != user.id:
+        return jsonify({"message": "无权限"}), 403
+
+    Reaction.query.filter_by(target_type="teamup_post", target_id=p.id).delete(synchronize_session=False)
+    Comment.query.filter_by(target_type="teamup_post", target_id=p.id).delete(synchronize_session=False)
+    db.session.delete(p)
+    db.session.commit()
+    return jsonify({"ok": True})

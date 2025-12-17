@@ -38,6 +38,7 @@ def set_user_password(user_id: int):
     if not u:
         return jsonify({"message": "用户不存在"}), 404
     u.password_hash = hash_password(password)
+    u.must_change_password = password == "123456"
     db.session.commit()
     return jsonify({"ok": True})
 
@@ -385,6 +386,7 @@ def batch_create_users():
             display_name=display_name,
             is_active=True,
             created_at=now_utc(),
+            must_change_password=password == "123456",
         )
         db.session.add(u)
         created.append({"username": username, "role": role})

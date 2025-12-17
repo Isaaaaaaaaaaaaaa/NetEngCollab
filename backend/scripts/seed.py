@@ -85,6 +85,7 @@ def run():
           visibility=Visibility.public.value,
           updated_at=now_utc(),
         )
+        profile.auto_reply = "你好，我会在 24 小时内回复消息。"
         db.session.add(profile)
       if role == Role.teacher.value:
         t_profile = TeacherProfile(
@@ -95,6 +96,7 @@ def run():
           research_tags_json=json_dumps(["网络安全", "竞赛指导", "大创项目"]),
           updated_at=now_utc(),
         )
+        t_profile.auto_reply = "工作日 24 小时内回复。"
         db.session.add(t_profile)
       db.session.commit()
       return u
@@ -306,12 +308,19 @@ def run():
         db.session.add(msg)
       db.session.commit()
 
+    if students and demo_files:
+      profile0 = StudentProfile.query.filter_by(user_id=students[0].id).first()
+      if profile0:
+        profile0.resume_file_id = demo_files[0].id
+        db.session.add(profile0)
+        db.session.commit()
+
     for stu in students[:3]:
       n = Notification(
         user_id=stu.id,
         notif_type="system",
         title="欢迎使用平台",
-        payload_json=json_dumps({"message": "这是用于测试的系统通知。"}),
+        payload_json=json_dumps({"summary": "这是用于测试的系统通知。"}),
         is_read=False,
         created_at=now_utc(),
       )
@@ -321,4 +330,3 @@ def run():
 
 if __name__ == "__main__":
   run()
-

@@ -4,7 +4,7 @@ from flask import Blueprint, jsonify, request, send_file
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from ..extensions import db
-from ..models import File, Reaction, Resource, ReviewStatus, Role, User
+from ..models import Comment, File, Reaction, Resource, ReviewStatus, Role, User
 from ..utils import ensure_list_str, json_dumps, json_loads, new_storage_name, now_utc, storage_path
 
 
@@ -159,3 +159,53 @@ def list_resources():
             }
         )
     return jsonify({"items": items, "total": total, "page": page, "page_size": page_size})
+
+
+@bp.put("/resources/<int:resource_id>")
+@jwt_required()
+def update_resource(resource_id: int):
+    user = User.query.get(int(get_jwt_identity()))
+    if not user or not user.is_active:
+        return jsonify({"message": "未登录"}), 401
+    r = Resource.query.get(resource_id)
+    if not r:
+        return jsonify({"message": "不存在"}), 404
+    if user.role != Role.admin.value and r.uploader_user_id != user.id:
+        return jsonify({"message": "无权限"}), 403
+
+    data = request.get_json(force=True)
+    title = (data.get("title") or r.title or "").strip()
+    if not title:
+        return jsonify({"message": "标题不能为空"}), 400
+    r.title = title
+    if "resource_type" in data and (data.get("resource_type") or "").strip():
+        r.resource_type = (data.get("resource_type") or r.resource_type).strip()
+    if "description" in data:
+        r.description = (data.get("description") or None)
+    if "category" in data:
+        r.category = (data.get("category") or None)
+    if "tags" in data:
+        r.tags_json = json_dumps(ensure_list_str(data.get("tags")))
+    if "file_id" in data and data.get("file_id"):
+        r.file_id = int(data.get("file_id"))
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@bp.delete("/resources/<int:resource_id>")
+@jwt_required()
+def delete_resource(resource_id: int):
+    user = User.query.get(int(get_jwt_identity()))
+    if not user or not user.is_active:
+        return jsonify({"message": "未登录"}), 401
+    r = Resource.query.get(resource_id)
+    if not r:
+        return jsonify({"message": "不存在"}), 404
+    if user.role != Role.admin.value and r.uploader_user_id != user.id:
+        return jsonify({"message": "无权限"}), 403
+
+    Reaction.query.filter_by(target_type="resource", target_id=r.id).delete(synchronize_session=False)
+    Comment.query.filter_by(target_type="resource", target_id=r.id).delete(synchronize_session=False)
+    db.session.delete(r)
+    db.session.commit()
+    return jsonify({"ok": True})

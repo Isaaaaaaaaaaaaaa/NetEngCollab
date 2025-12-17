@@ -3,7 +3,25 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">站内私信</h2>
-        <p class="page-subtitle">与合作老师 / 学生进行一对一沟通</p>
+        <div class="msg-subtitle-row">
+          <p class="page-subtitle" style="margin:0;">{{ dmHint || '站内私信沟通与文件传输' }}</p>
+        </div>
+        <div class="msg-toprow">
+          <div v-if="me && (me.role === 'student' || me.role === 'teacher')" class="auto-reply-row">
+            <span style="white-space:nowrap;">自动回复：</span>
+            <el-input
+              v-model="autoReplyDraft"
+              size="small"
+              clearable
+              placeholder="可选，如：我会在 24 小时内回复"
+              style="width: 360px;"
+            />
+            <el-button size="small" :disabled="savingAutoReply" @click="saveAutoReply">保存</el-button>
+          </div>
+          <div v-if="me && (me.role === 'student' || me.role === 'teacher')" class="auto-reply-rule">
+            规则：对方发来消息触发；同一会话 12 小时最多回复一次；清空即关闭。
+          </div>
+        </div>
       </div>
     </div>
 
@@ -13,13 +31,16 @@
           <template #header>
             <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
               <div class="page-subtitle">会话</div>
-              <el-input
-                v-model="search"
-                size="small"
-                placeholder="搜索"
-                clearable
-                style="width: 180px;"
-              />
+              <div style="display:flex; align-items:center; gap:8px;">
+                <el-input
+                  v-model="search"
+                  size="small"
+                  placeholder="搜索"
+                  clearable
+                  style="width: 180px;"
+                />
+                <el-button v-if="me && me.role === 'admin'" size="small" @click="openStart">新建</el-button>
+              </div>
             </div>
           </template>
           <el-empty v-if="!filteredConversations.length" description="暂无会话" />
@@ -70,7 +91,21 @@
                 <div v-else class="chat-row" :class="m.mine ? 'is-mine' : ''">
                   <div v-if="!m.mine" class="chat-avatar">{{ avatarText(activeOther?.display_name) }}</div>
                   <div class="chat-bubble">
-                    <div class="chat-text">{{ m.content || '[文件]' }}</div>
+                    <div class="chat-text">
+                      <span v-if="m.is_auto_reply" class="auto-reply-tag">【自动回复】</span>
+                      <span v-if="m.file" class="file-line" :class="m.mine ? 'is-mine' : 'is-other'">
+                        <el-link
+                          class="file-link"
+                          :underline="false"
+                          :style="m.mine ? 'color:#ffffff;' : ''"
+                          @click.prevent="downloadFile(m.file)"
+                        >
+                          {{ m.file.original_name || '[文件]' }}
+                        </el-link>
+                        <span v-if="m.file.size_bytes" class="file-size">({{ formatSize(m.file.size_bytes) }})</span>
+                      </span>
+                      <span v-else>{{ m.display_content || '' }}</span>
+                    </div>
                     <div class="chat-meta">{{ formatTime(m.created_at) }}</div>
                   </div>
                   <div v-if="m.mine" class="chat-avatar mine">{{ avatarText(me?.display_name) }}</div>
@@ -80,6 +115,7 @@
           </div>
 
           <div class="chat-input">
+            <input ref="fileInputEl" type="file" style="display:none;" @change="handlePickFile" />
             <el-input
               v-model="content"
               type="textarea"
@@ -87,16 +123,44 @@
               placeholder="输入消息，Enter 发送，Shift+Enter 换行"
               @keydown.enter.exact.prevent="send"
             />
-            <el-button type="primary" :disabled="!selectedId" @click="send">发送</el-button>
+            <el-button :disabled="!selectedId || uploading" @click="pickFile">发送文件</el-button>
+            <el-button type="primary" :disabled="!selectedId || uploading" @click="send">发送</el-button>
           </div>
         </el-card>
       </el-col>
     </el-row>
+
+    <el-dialog v-model="startVisible" title="新建会话" width="520px">
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+        <el-input v-model="startKeyword" size="small" clearable placeholder="学号/工号/姓名" style="flex:1;" />
+        <el-button size="small" type="primary" plain :disabled="startLoading" @click="searchUsers">搜索</el-button>
+      </div>
+      <el-empty v-if="!startUsers.length" description="暂无结果" />
+      <el-scrollbar v-else style="max-height: 340px;">
+        <ul style="list-style:none; padding:0; margin:0; font-size:12px; color:var(--app-text); padding-right:6px;">
+          <li
+            v-for="u in startUsers"
+            :key="u.id"
+            style="padding:8px 10px; border-radius:10px; cursor:pointer; border:1px solid rgba(148,163,184,0.22); margin-bottom:8px;"
+            @click="startWith(u)"
+          >
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+              <span class="truncate" style="max-width:260px; font-weight:600;">{{ u.display_name || u.username }}</span>
+              <span class="pill" :class="u.role === 'teacher' ? 'badge-blue' : u.role === 'student' ? 'badge-amber' : 'badge-gray'" style="font-size:10px;">
+                {{ u.role === 'teacher' ? '教师' : u.role === 'student' ? '学生' : '管理员' }}
+              </span>
+            </div>
+            <div style="font-size:11px; color:var(--app-muted); margin-top:2px;">账号：{{ u.username }}</div>
+          </li>
+        </ul>
+      </el-scrollbar>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import axios from "axios";
 
 
@@ -107,6 +171,56 @@ const content = ref("");
 const me = ref<any>(null);
 const search = ref("");
 const scrollEl = ref<HTMLElement | null>(null);
+const fileInputEl = ref<HTMLInputElement | null>(null);
+const uploading = ref(false);
+const autoReplyDraft = ref("");
+const savingAutoReply = ref(false);
+
+const startVisible = ref(false);
+const startKeyword = ref("");
+const startUsers = ref<any[]>([]);
+const startLoading = ref(false);
+
+const route = useRoute();
+
+
+const dmHint = computed(() => {
+  const role = me.value?.role;
+  if (role === "teacher") {
+    return "提示：在“学生画像与匹配”中选择学生后，点击“发私信”即可向学生发送私信。";
+  }
+  if (role === "student") {
+    return "提示：在“项目与匹配”列表点击教师姓名，即可向教师发起私信沟通。";
+  }
+  if (role === "admin") {
+    return "提示：点击左侧“新建”可搜索用户并发起提醒私信。";
+  }
+  return "";
+});
+
+
+async function loadAutoReply() {
+  if (!me.value) return;
+  if (me.value.role !== "student" && me.value.role !== "teacher") return;
+  try {
+    const resp = await axios.get("/api/messages/auto-reply");
+    autoReplyDraft.value = resp.data?.auto_reply || "";
+  } catch (e) {
+  }
+}
+
+
+async function saveAutoReply() {
+  if (!me.value) return;
+  if (me.value.role !== "student" && me.value.role !== "teacher") return;
+  savingAutoReply.value = true;
+  try {
+    await axios.put("/api/messages/auto-reply", { auto_reply: autoReplyDraft.value });
+  } catch (e) {
+  } finally {
+    savingAutoReply.value = false;
+  }
+}
 
 
 async function loadConversations() {
@@ -123,7 +237,12 @@ async function select(id: number) {
   const resp = await axios.get(`/api/conversations/${id}/messages`);
   messages.value = resp.data.items.map((m: any) => ({
     ...m,
-    mine: m.sender_user_id === me.value.id
+    mine: m.sender_user_id === me.value.id,
+    is_auto_reply: typeof m.content === "string" && m.content.startsWith("【自动回复】"),
+    display_content:
+      typeof m.content === "string" && m.content.startsWith("【自动回复】")
+        ? m.content.replace(/^【自动回复】\s?/, "")
+        : m.content
   }));
   await nextTick();
   if (scrollEl.value) {
@@ -136,8 +255,8 @@ async function send() {
   if (!content.value.trim() || !selectedId.value) return;
   const conv = conversations.value.find(x => x.id === selectedId.value);
   if (!conv || !conv.other) return;
-  const teacherId = me.value.role === "teacher" ? me.value.id : conv.other.role === "teacher" ? conv.other.id : conv.other.id;
-  const studentId = me.value.role === "student" ? me.value.id : conv.other.role === "student" ? conv.other.id : conv.other.id;
+  const teacherId = conv.teacher_user_id;
+  const studentId = conv.student_user_id;
   await axios.post("/api/messages/send", {
     teacher_user_id: teacherId,
     student_user_id: studentId,
@@ -146,6 +265,68 @@ async function send() {
   content.value = "";
   await loadConversations();
   await select(selectedId.value);
+}
+
+
+function pickFile() {
+  if (!selectedId.value) return;
+  fileInputEl.value?.click();
+}
+
+
+async function handlePickFile(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file || !selectedId.value) return;
+
+  const conv = conversations.value.find(x => x.id === selectedId.value);
+  if (!conv || !conv.other) return;
+
+  uploading.value = true;
+  try {
+    const fd = new FormData();
+    fd.append("file", file);
+    const up = await axios.post("/api/files", fd);
+    const fileId = up.data?.file_id;
+    if (!fileId) return;
+    const teacherId = conv.teacher_user_id;
+    const studentId = conv.student_user_id;
+    await axios.post("/api/messages/send", {
+      teacher_user_id: teacherId,
+      student_user_id: studentId,
+      file_id: fileId
+    });
+    await loadConversations();
+    await select(selectedId.value);
+  } catch (err) {
+  } finally {
+    uploading.value = false;
+  }
+}
+
+
+function formatSize(bytes: number) {
+  if (!bytes || bytes <= 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(1)} MB`;
+}
+
+
+async function downloadFile(file: any) {
+  if (!file || !file.id) return;
+  const resp = await axios.get(`/api/files/${file.id}`, { responseType: "blob" });
+  const blobUrl = window.URL.createObjectURL(resp.data);
+  const a = document.createElement("a");
+  a.href = blobUrl;
+  a.download = file.original_name || `file_${file.id}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(blobUrl);
 }
 
 
@@ -208,8 +389,52 @@ function formatListTime(iso?: string) {
 onMounted(async () => {
   const meResp = await axios.get("/api/auth/me");
   me.value = meResp.data;
+  await loadAutoReply();
   await loadConversations();
+  const cid = Number(route.query.conversation_id);
+  if (cid && conversations.value.some((x: any) => x.id === cid)) {
+    await select(cid);
+  }
 });
+
+
+function openStart() {
+  startUsers.value = [];
+  startKeyword.value = "";
+  startVisible.value = true;
+}
+
+
+async function searchUsers() {
+  if (!me.value || me.value.role !== "admin") return;
+  startLoading.value = true;
+  try {
+    const resp = await axios.get("/api/admin/users", {
+      params: { keyword: (startKeyword.value || "").trim() || undefined, page: 1, page_size: 30 }
+    });
+    startUsers.value = resp.data.items || [];
+  } catch (e) {
+    startUsers.value = [];
+  } finally {
+    startLoading.value = false;
+  }
+}
+
+
+async function startWith(u: any) {
+  if (!me.value || me.value.role !== "admin") return;
+  if (!u || !u.id) return;
+  try {
+    const resp = await axios.post("/api/conversations/start", { user_id: u.id });
+    const cid = resp.data?.id;
+    startVisible.value = false;
+    await loadConversations();
+    if (cid) {
+      await select(cid);
+    }
+  } catch (e) {
+  }
+}
 </script>
 
 <style scoped>
@@ -218,6 +443,80 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.msg-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--app-muted);
+}
+
+.msg-subtitle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 2px;
+}
+
+.msg-toprow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 6px;
+}
+
+.auto-reply-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--app-muted);
+  font-size: 12px;
+}
+
+.auto-reply-rule {
+  font-size: 12px;
+  color: var(--app-muted);
+  text-align: right;
+}
+
+.auto-reply-tag {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  margin-right: 6px;
+  background: rgba(148, 163, 184, 0.22);
+  color: #0f172a;
+}
+
+.chat-row.is-mine .auto-reply-tag {
+  background: rgba(255, 255, 255, 0.24);
+  color: #fff;
+}
+
+.file-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+:deep(.file-link) {
+  color: var(--el-color-primary);
+}
+
+.chat-row.is-mine :deep(.file-link) {
+  color: #fff;
+}
+
+.chat-row.is-mine .file-size {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.file-size {
+  font-size: 11px;
+  color: var(--app-muted);
 }
 
 .msg-row {

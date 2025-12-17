@@ -66,6 +66,8 @@
                     <span>{{ r.uploader?.display_name || "未知" }}</span>
                     <span>{{ r.created_at?.slice(0, 10) }}</span>
                     <el-button size="small" text type="primary" @click="download(r)">下载</el-button>
+                    <el-button v-if="canEdit(r)" size="small" text type="primary" @click="openEdit(r)">编辑</el-button>
+                    <el-button v-if="canDelete(r)" size="small" text type="danger" @click="remove(r)">删除</el-button>
                   </div>
                 </div>
                 <div style="margin-top:6px;">
@@ -139,13 +141,48 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <el-dialog v-model="editVisible" title="编辑资源" width="520px">
+      <el-form :model="editForm" label-position="top" size="small">
+        <el-form-item label="资源类型">
+          <el-select v-model="editForm.resource_type">
+            <el-option label="科研论文" value="paper" />
+            <el-option label="数据集" value="dataset" />
+            <el-option label="讲座 / 分享" value="slides" />
+            <el-option label="项目成果" value="project" />
+            <el-option label="获奖证书" value="award" />
+            <el-option label="专利 / 软件著作" value="patent" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="标题">
+          <el-input v-model="editForm.title" />
+        </el-form-item>
+        <el-form-item label="简介">
+          <el-input v-model="editForm.description" type="textarea" :rows="3" />
+        </el-form-item>
+        <el-form-item label="标签（逗号分隔）">
+          <el-input v-model="editForm.tags" />
+        </el-form-item>
+        <el-form-item label="替换文件（可选）">
+          <input ref="editFileInput" type="file" style="font-size:11px; color:var(--app-muted);" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div style="text-align:right;">
+          <el-button size="small" @click="editVisible = false">取消</el-button>
+          <el-button type="primary" size="small" :disabled="savingEdit" @click="saveEdit">保存</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import axios from "axios";
+import { ElMessageBox } from "element-plus";
 import InteractionsPanel from "../../components/InteractionsPanel.vue";
+import { useAuthStore } from "../../store/auth";
 
 
 const items = ref<any[]>([]);
@@ -163,6 +200,33 @@ const upload = reactive({
 });
 const fileInput = ref<HTMLInputElement | null>(null);
 const hint = ref(false);
+const auth = useAuthStore();
+const meId = computed(() => auth.user?.id || null);
+const meRole = computed(() => auth.user?.role || null);
+
+const editVisible = ref(false);
+const editFileInput = ref<HTMLInputElement | null>(null);
+const savingEdit = ref(false);
+const editingId = ref<number | null>(null);
+const editForm = reactive({
+  resource_type: "paper",
+  title: "",
+  description: "",
+  tags: ""
+});
+
+
+function canEdit(r: any) {
+  if (!meId.value) return false;
+  return r?.uploader?.id === meId.value;
+}
+
+
+function canDelete(r: any) {
+  if (!meId.value) return false;
+  if (meRole.value === "admin") return true;
+  return r?.uploader?.id === meId.value;
+}
 async function load() {
   const resp = await axios.get("/api/resources", {
     params: {
@@ -189,6 +253,70 @@ async function download(r: any) {
   a.download = r.file.original_name;
   a.click();
   window.URL.revokeObjectURL(url);
+}
+
+
+function openEdit(r: any) {
+  editingId.value = r.id;
+  editForm.resource_type = r.resource_type || "paper";
+  editForm.title = r.title || "";
+  editForm.description = r.description || "";
+  editForm.tags = (r.tags || []).join(", ");
+  if (editFileInput.value) editFileInput.value.value = "";
+  editVisible.value = true;
+}
+
+
+async function saveEdit() {
+  if (!editingId.value) return;
+  if (!editForm.title) return;
+  savingEdit.value = true;
+  try {
+    let fileId: number | null = null;
+    const f = editFileInput.value?.files?.[0];
+    if (f) {
+      const fd = new FormData();
+      fd.append("file", f);
+      const fileResp = await axios.post("/api/files", fd, {
+        headers: { "Content-Type": "multipart/form-data" }
+      });
+      fileId = fileResp.data.file_id;
+    }
+    await axios.put(`/api/resources/${editingId.value}`, {
+      resource_type: editForm.resource_type,
+      title: editForm.title,
+      description: editForm.description,
+      tags: editForm.tags
+        .split(/[,，]/)
+        .map(x => x.trim())
+        .filter(x => x),
+      file_id: fileId || undefined
+    });
+    editVisible.value = false;
+    await load();
+  } catch (e) {
+  } finally {
+    savingEdit.value = false;
+  }
+}
+
+
+async function remove(r: any) {
+  if (!r?.id) return;
+  try {
+    await ElMessageBox.confirm("确认删除该条目？", "删除确认", {
+      type: "warning",
+      confirmButtonText: "删除",
+      cancelButtonText: "取消"
+    });
+  } catch {
+    return;
+  }
+  try {
+    await axios.delete(`/api/resources/${r.id}`);
+    await load();
+  } catch (e) {
+  }
 }
 
 

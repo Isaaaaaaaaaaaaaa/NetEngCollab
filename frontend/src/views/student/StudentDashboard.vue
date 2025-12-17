@@ -140,6 +140,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import axios from "axios";
+import { ElMessage } from "element-plus";
 
 
 const topProjects = ref<any[]>([]);
@@ -213,12 +214,14 @@ async function loadInvitations() {
 async function acceptInvite(r: any) {
   await axios.post(`/api/cooperation/requests/${r.id}/respond`, { action: "accept" });
   await loadInvitations();
+  ElMessage.success("已接受合作邀请");
 }
 
 
 async function rejectInvite(r: any) {
   await axios.post(`/api/cooperation/requests/${r.id}/respond`, { action: "reject" });
   await loadInvitations();
+  ElMessage.success("已拒绝合作邀请");
 }
 
 

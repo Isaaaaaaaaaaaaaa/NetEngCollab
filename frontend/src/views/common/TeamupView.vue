@@ -45,7 +45,11 @@
               >
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
                   <span class="truncate" style="max-width:220px; font-weight:500;">{{ p.title }}</span>
-                  <span class="pill badge-amber" style="font-size:10px;">{{ p.post_kind }}</span>
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span class="pill badge-amber" style="font-size:10px;">{{ p.post_kind }}</span>
+                    <el-button v-if="canEdit(p)" size="small" text type="primary" @click="openEdit(p)">编辑</el-button>
+                    <el-button v-if="canDelete(p)" size="small" text type="danger" @click="remove(p)">删除</el-button>
+                  </div>
                 </div>
                 <div style="display:flex; align-items:center; justify-content:space-between; font-size:12px; color:var(--app-muted); margin-bottom:4px;">
                   <div class="truncate" style="max-width:200px;">{{ p.content }}</div>
@@ -64,6 +68,7 @@
                 </div>
                 <div style="display:flex; flex-wrap:wrap; gap:4px;">
                   <span v-for="r in p.needed_roles" :key="r" class="tag">{{ r }}</span>
+                  <span v-for="t in p.tags" :key="t" class="tag">{{ t }}</span>
                 </div>
                 <div style="margin-top:4px;">
                   <InteractionsPanel :target-type="'teamup_post'" :target-id="p.id" />
@@ -113,6 +118,9 @@
                 <el-form-item label="需要的角色（逗号分隔）">
                   <el-input v-model="form.needed_roles" placeholder="如：前端, 算法" />
                 </el-form-item>
+                <el-form-item label="标签（逗号分隔）">
+                  <el-input v-model="form.tags" placeholder="如：蓝桥杯, 前端" />
+                </el-form-item>
                 <el-form-item>
                   <el-button type="primary" style="width:100%;" @click="publish">发布</el-button>
                 </el-form-item>
@@ -122,13 +130,45 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <el-dialog v-model="editVisible" title="编辑需求" width="520px">
+      <el-form :model="editForm" label-position="top" size="small">
+        <el-form-item label="需求类型">
+          <el-select v-model="editForm.post_kind">
+            <el-option label="竞赛组队" value="竞赛组队" />
+            <el-option label="科研分工" value="科研分工" />
+            <el-option label="短期互助" value="短期互助" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="标题">
+          <el-input v-model="editForm.title" />
+        </el-form-item>
+        <el-form-item label="需求描述">
+          <el-input v-model="editForm.content" type="textarea" :rows="4" />
+        </el-form-item>
+        <el-form-item label="需要的角色（逗号分隔）">
+          <el-input v-model="editForm.needed_roles" />
+        </el-form-item>
+        <el-form-item label="标签（逗号分隔）">
+          <el-input v-model="editForm.tags" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div style="text-align:right;">
+          <el-button size="small" @click="editVisible = false">取消</el-button>
+          <el-button type="primary" size="small" :disabled="savingEdit" @click="saveEdit">保存</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import axios from "axios";
+import { ElMessageBox } from "element-plus";
 import InteractionsPanel from "../../components/InteractionsPanel.vue";
+import { useAuthStore } from "../../store/auth";
 
 
 const items = ref<any[]>([]);
@@ -141,8 +181,38 @@ const form = reactive({
   post_kind: "竞赛组队",
   title: "",
   content: "",
-  needed_roles: ""
+  needed_roles: "",
+  tags: ""
 });
+
+
+const auth = useAuthStore();
+const meId = computed(() => auth.user?.id || null);
+const meRole = computed(() => auth.user?.role || null);
+
+const editVisible = ref(false);
+const savingEdit = ref(false);
+const editingId = ref<number | null>(null);
+const editForm = reactive({
+  post_kind: "竞赛组队",
+  title: "",
+  content: "",
+  needed_roles: "",
+  tags: ""
+});
+
+
+function canEdit(p: any) {
+  if (!meId.value) return false;
+  return p?.author?.id === meId.value;
+}
+
+
+function canDelete(p: any) {
+  if (!meId.value) return false;
+  if (meRole.value === "admin") return true;
+  return p?.author?.id === meId.value;
+}
 
 
 async function load() {
@@ -171,11 +241,74 @@ async function publish() {
       .split(/[,，]/)
       .map(x => x.trim())
       .filter(x => x)
+    ,
+    tags: form.tags
+      .split(/[,，]/)
+      .map(x => x.trim())
+      .filter(x => x)
   });
   form.title = "";
   form.content = "";
   form.needed_roles = "";
+  form.tags = "";
   await load();
+}
+
+
+function openEdit(p: any) {
+  editingId.value = p.id;
+  editForm.post_kind = p.post_kind || "竞赛组队";
+  editForm.title = p.title || "";
+  editForm.content = p.content || "";
+  editForm.needed_roles = (p.needed_roles || []).join(", ");
+  editForm.tags = (p.tags || []).join(", ");
+  editVisible.value = true;
+}
+
+
+async function saveEdit() {
+  if (!editingId.value) return;
+  if (!editForm.title || !editForm.content) return;
+  savingEdit.value = true;
+  try {
+    await axios.put(`/api/teamup/${editingId.value}`, {
+      post_kind: editForm.post_kind,
+      title: editForm.title,
+      content: editForm.content,
+      needed_roles: editForm.needed_roles
+        .split(/[,，]/)
+        .map(x => x.trim())
+        .filter(x => x),
+      tags: editForm.tags
+        .split(/[,，]/)
+        .map(x => x.trim())
+        .filter(x => x)
+    });
+    editVisible.value = false;
+    await load();
+  } catch (e) {
+  } finally {
+    savingEdit.value = false;
+  }
+}
+
+
+async function remove(p: any) {
+  if (!p?.id) return;
+  try {
+    await ElMessageBox.confirm("确认删除该条需求？", "删除确认", {
+      type: "warning",
+      confirmButtonText: "删除",
+      cancelButtonText: "取消"
+    });
+  } catch {
+    return;
+  }
+  try {
+    await axios.delete(`/api/teamup/${p.id}`);
+    await load();
+  } catch (e) {
+  }
 }
 
 

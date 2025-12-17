@@ -21,6 +21,7 @@ const ResourcesCenter = () => import("../views/common/ResourcesCenter.vue");
 const ForumView = () => import("../views/common/ForumView.vue");
 const TeamupView = () => import("../views/common/TeamupView.vue");
 const MessagesView = () => import("../views/common/MessagesView.vue");
+const ChangePasswordView = () => import("../views/common/ChangePasswordView.vue");
 
 
 const routes: RouteRecordRaw[] = [
@@ -28,6 +29,12 @@ const routes: RouteRecordRaw[] = [
     path: "/login",
     name: "login",
     component: LoginView
+  },
+  {
+    path: "/change-password",
+    name: "change-password",
+    component: ChangePasswordView,
+    meta: { requiresAuth: true }
   },
   {
     path: "/",
@@ -71,7 +78,11 @@ const routes: RouteRecordRaw[] = [
       { path: "dashboard", name: "admin-dashboard", component: AdminDashboard },
       { path: "analytics", name: "admin-analytics", component: AdminAnalytics },
       { path: "users", name: "admin-users", component: AdminUsers },
-      { path: "projects", name: "admin-projects", component: AdminCooperations }
+      { path: "projects", name: "admin-projects", component: AdminCooperations },
+      { path: "resources", name: "admin-resources", component: ResourcesCenter },
+      { path: "forum", name: "admin-forum", component: ForumView },
+      { path: "teamup", name: "admin-teamup", component: TeamupView },
+      { path: "messages", name: "admin-messages", component: MessagesView }
     ]
   }
 ];

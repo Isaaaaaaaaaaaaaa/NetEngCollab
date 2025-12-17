@@ -53,9 +53,9 @@
           <el-form-item label="密码">
             <el-input v-model="form.password" type="password" placeholder="示例：admin123" show-password />
           </el-form-item>
-          <div style="min-height: 18px; font-size: 12px; color: #f04438; margin-bottom: 4px;">
-            {{ error }}
-          </div>
+        <div style="min-height: 18px; font-size: 12px; color: #f04438; margin-bottom: 4px;">
+          {{ error }}
+        </div>
           <el-form-item>
             <el-button
               type="primary"
@@ -67,12 +67,6 @@
             </el-button>
           </el-form-item>
         </el-form>
-        <div style="margin-top: 12px; font-size: 11px; color: #98a2b3; line-height: 1.7;">
-          <div style="margin-bottom: 4px;">测试账号示例：</div>
-          <div>管理员：admin / admin123</div>
-          <div>教师：1010001 / tea123456</div>
-          <div>学生：221002501 / stu123456</div>
-        </div>
       </div>
     </div>
   </div>
@@ -114,6 +108,10 @@ async function onSubmit() {
   try {
     const user = await auth.login(form.username, form.password, form.role);
     const redirect = (route.query.redirect as string) || null;
+    if (user.must_change_password) {
+      router.replace({ name: "change-password" });
+      return;
+    }
     if (redirect) {
       router.replace(redirect);
       return;

@@ -160,6 +160,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import axios from "axios";
+import { ElMessageBox } from "element-plus";
 
 
 const projects = ref<any[]>([]);
@@ -273,7 +274,15 @@ async function saveEdit() {
 
 
 async function remove(p: any) {
-  if (!window.confirm("确认删除该项目？")) return;
+  try {
+    await ElMessageBox.confirm("确认删除该项目？", "删除确认", {
+      type: "warning",
+      confirmButtonText: "删除",
+      cancelButtonText: "取消"
+    });
+  } catch {
+    return;
+  }
   await axios.delete(`/api/admin/projects/${p.id}`);
   selectedId.value = null;
   await load();
@@ -281,7 +290,19 @@ async function remove(p: any) {
 
 
 async function resetSelection(row: any) {
-  if (!window.confirm("确认重置该学生的选择状态？重置后老师和学生可以重新发起双选。")) return;
+  try {
+    await ElMessageBox.confirm(
+      "确认重置该学生的选择状态？重置后老师和学生可以重新发起双选。",
+      "重置确认",
+      {
+        type: "warning",
+        confirmButtonText: "重置",
+        cancelButtonText: "取消"
+      }
+    );
+  } catch {
+    return;
+  }
   await axios.post(`/api/admin/cooperations/${row.id}/reset`);
   await load();
 }

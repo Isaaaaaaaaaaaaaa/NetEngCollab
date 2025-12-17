@@ -167,6 +167,7 @@ def respond(req_id: int):
     else:
         return jsonify({"message": "无权限"}), 403
 
+    before_final = req.final_status
     req.updated_at = now_utc()
     _finalize_if_ready(req)
     db.session.commit()
@@ -184,6 +185,7 @@ def respond(req_id: int):
         status_text = {
             CooperationStatus.accepted.value: "已接受",
             CooperationStatus.rejected.value: "已拒绝",
+            CooperationStatus.confirmed.value: "已确认",
         }
         summary = status_text.get(
             req.final_status if req.final_status != CooperationStatus.pending.value else (req.teacher_status or req.student_status),
@@ -197,6 +199,22 @@ def respond(req_id: int):
             title=title,
             payload={"summary": summary},
         )
+
+    if before_final != CooperationStatus.confirmed.value and req.final_status == CooperationStatus.confirmed.value:
+        if teacher:
+            push_notification(
+                user_id=teacher.id,
+                notif_type="cooperation_confirmed",
+                title="合作已确认",
+                payload={"summary": f"项目：{post.title}" if post else "合作已确认"},
+            )
+        if student:
+            push_notification(
+                user_id=student.id,
+                notif_type="cooperation_confirmed",
+                title="合作已确认",
+                payload={"summary": f"项目：{post.title}" if post else "合作已确认"},
+            )
 
     return jsonify({"final_status": req.final_status})
 

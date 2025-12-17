@@ -45,7 +45,11 @@
                 >
                 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
                   <span class="truncate" style="max-width:220px; font-weight:500;">{{ t.title }}</span>
-                  <span class="pill badge-blue" style="font-size:10px;">{{ t.category }}</span>
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span class="pill badge-blue" style="font-size:10px;">{{ t.category }}</span>
+                    <el-button v-if="canEdit(t)" size="small" text type="primary" @click="openEdit(t)">编辑</el-button>
+                    <el-button v-if="canDelete(t)" size="small" text type="danger" @click="remove(t)">删除</el-button>
+                  </div>
                 </div>
                 <div style="display:flex; align-items:center; justify-content:space-between; font-size:12px; color:var(--app-muted); margin-bottom:4px;">
                   <div class="truncate" style="max-width:200px;">{{ t.content }}</div>
@@ -123,13 +127,43 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <el-dialog v-model="editVisible" title="编辑话题" width="520px">
+      <el-form :model="editForm" label-position="top" size="small">
+        <el-form-item label="板块">
+          <el-select v-model="editForm.category">
+            <el-option label="机器学习讨论区" value="机器学习" />
+            <el-option label="网络安全讨论区" value="网络安全" />
+            <el-option label="ACM 竞赛交流区" value="ACM" />
+            <el-option label="综合讨论" value="综合" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="话题标题">
+          <el-input v-model="editForm.title" />
+        </el-form-item>
+        <el-form-item label="内容">
+          <el-input v-model="editForm.content" type="textarea" :rows="4" />
+        </el-form-item>
+        <el-form-item label="标签（逗号分隔）">
+          <el-input v-model="editForm.tags" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div style="text-align:right;">
+          <el-button size="small" @click="editVisible = false">取消</el-button>
+          <el-button type="primary" size="small" :disabled="savingEdit" @click="saveEdit">保存</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import axios from "axios";
+import { ElMessageBox } from "element-plus";
 import InteractionsPanel from "../../components/InteractionsPanel.vue";
+import { useAuthStore } from "../../store/auth";
 
 
 const topics = ref<any[]>([]);
@@ -144,6 +178,34 @@ const form = reactive({
   content: "",
   tags: ""
 });
+
+
+const auth = useAuthStore();
+const meId = computed(() => auth.user?.id || null);
+const meRole = computed(() => auth.user?.role || null);
+
+const editVisible = ref(false);
+const savingEdit = ref(false);
+const editingId = ref<number | null>(null);
+const editForm = reactive({
+  category: "机器学习",
+  title: "",
+  content: "",
+  tags: ""
+});
+
+
+function canEdit(t: any) {
+  if (!meId.value) return false;
+  return t?.author?.id === meId.value;
+}
+
+
+function canDelete(t: any) {
+  if (!meId.value) return false;
+  if (meRole.value === "admin") return true;
+  return t?.author?.id === meId.value;
+}
 
 
 async function load() {
@@ -177,6 +239,58 @@ async function publish() {
   form.content = "";
   form.tags = "";
   await load();
+}
+
+
+function openEdit(t: any) {
+  editingId.value = t.id;
+  editForm.category = t.category || "综合";
+  editForm.title = t.title || "";
+  editForm.content = t.content || "";
+  editForm.tags = (t.tags || []).join(", ");
+  editVisible.value = true;
+}
+
+
+async function saveEdit() {
+  if (!editingId.value) return;
+  if (!editForm.title || !editForm.content) return;
+  savingEdit.value = true;
+  try {
+    await axios.put(`/api/forum/topics/${editingId.value}`, {
+      category: editForm.category,
+      title: editForm.title,
+      content: editForm.content,
+      tags: editForm.tags
+        .split(/[,，]/)
+        .map(x => x.trim())
+        .filter(x => x)
+    });
+    editVisible.value = false;
+    await load();
+  } catch (e) {
+  } finally {
+    savingEdit.value = false;
+  }
+}
+
+
+async function remove(t: any) {
+  if (!t?.id) return;
+  try {
+    await ElMessageBox.confirm("确认删除该话题？", "删除确认", {
+      type: "warning",
+      confirmButtonText: "删除",
+      cancelButtonText: "取消"
+    });
+  } catch {
+    return;
+  }
+  try {
+    await axios.delete(`/api/forum/topics/${t.id}`);
+    await load();
+  } catch (e) {
+  }
 }
 
 

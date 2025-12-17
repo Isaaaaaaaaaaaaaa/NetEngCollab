@@ -2,7 +2,8 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from ..extensions import db
-from ..models import ForumReply, ForumTopic, Reaction, Role, User
+from ..models import Comment, ForumReply, ForumTopic, Reaction, Role, User
+from ..services import push_notification
 from ..utils import ensure_list_str, json_dumps, json_loads, now_utc
 
 
@@ -131,9 +132,65 @@ def add_reply(topic_id: int):
     content = (data.get("content") or "").strip()
     if not content:
         return jsonify({"message": "内容不能为空"}), 400
-    if not ForumTopic.query.get(topic_id):
+    topic = ForumTopic.query.get(topic_id)
+    if not topic:
         return jsonify({"message": "话题不存在"}), 404
     r = ForumReply(topic_id=topic_id, author_user_id=user.id, content=content, created_at=now_utc())
     db.session.add(r)
     db.session.commit()
+
+    if topic.author_user_id != user.id:
+        summary = f"{user.display_name} 回复了你的话题：{content[:60]}"
+        push_notification(
+            user_id=topic.author_user_id,
+            notif_type="forum_reply",
+            title="话题有新的回复",
+            payload={"topic_id": topic.id, "summary": summary},
+        )
     return jsonify({"id": r.id})
+
+
+@bp.put("/forum/topics/<int:topic_id>")
+@jwt_required()
+def update_topic(topic_id: int):
+    user = User.query.get(int(get_jwt_identity()))
+    if not user or not user.is_active:
+        return jsonify({"message": "未登录"}), 401
+    t = ForumTopic.query.get(topic_id)
+    if not t:
+        return jsonify({"message": "话题不存在"}), 404
+    if user.role != Role.admin.value and t.author_user_id != user.id:
+        return jsonify({"message": "无权限"}), 403
+    data = request.get_json(force=True)
+    title = (data.get("title") or t.title or "").strip()
+    content = (data.get("content") or t.content or "").strip()
+    if not title or not content:
+        return jsonify({"message": "标题/内容不能为空"}), 400
+    t.title = title
+    t.content = content
+    if "category" in data and (data.get("category") or "").strip():
+        t.category = (data.get("category") or t.category).strip()
+    if "tags" in data:
+        t.tags_json = json_dumps(ensure_list_str(data.get("tags")))
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@bp.delete("/forum/topics/<int:topic_id>")
+@jwt_required()
+def delete_topic(topic_id: int):
+    user = User.query.get(int(get_jwt_identity()))
+    if not user or not user.is_active:
+        return jsonify({"message": "未登录"}), 401
+    t = ForumTopic.query.get(topic_id)
+    if not t:
+        return jsonify({"message": "话题不存在"}), 404
+    if user.role != Role.admin.value and t.author_user_id != user.id:
+        return jsonify({"message": "无权限"}), 403
+
+    ForumReply.query.filter_by(topic_id=t.id).delete(synchronize_session=False)
+    Reaction.query.filter_by(target_type="forum_topic", target_id=t.id).delete(synchronize_session=False)
+    Comment.query.filter_by(target_type="forum_topic", target_id=t.id).delete(synchronize_session=False)
+    db.session.delete(t)
+    db.session.commit()
+    return jsonify({"ok": True})
