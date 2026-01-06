@@ -576,3 +576,269 @@ def admin_delete_project(post_id: int):
     db.session.delete(post)
     db.session.commit()
     return jsonify({"ok": True})
+
+
+@bp.get("/export/users")
+@require_roles(["admin"])
+def export_users():
+    """导出用户数据到Excel"""
+    from io import BytesIO
+    from flask import send_file
+    
+    try:
+        from openpyxl import Workbook
+    except ImportError:
+        return jsonify({"message": "服务器未安装openpyxl库"}), 500
+    
+    role = (request.args.get("role") or "").strip()
+    
+    q = User.query
+    if role in {"student", "teacher", "admin"}:
+        q = q.filter_by(role=role)
+    
+    users = q.order_by(User.created_at.desc()).all()
+    
+    # 创建工作簿
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "用户列表"
+    
+    # 写入表头
+    headers = ["角色", "学号/工号", "姓名", "邮箱", "手机号", "注册时间", "状态"]
+    ws.append(headers)
+    
+    # 写入数据
+    role_map = {"student": "学生", "teacher": "教师", "admin": "管理员"}
+    for u in users:
+        ws.append([
+            role_map.get(u.role, u.role),
+            u.username,
+            u.display_name or "",
+            u.email or "",
+            u.phone or "",
+            u.created_at.strftime("%Y-%m-%d %H:%M") if u.created_at else "",
+            "启用" if u.is_active else "禁用"
+        ])
+    
+    # 调整列宽
+    column_widths = [10, 15, 15, 25, 15, 20, 10]
+    for i, width in enumerate(column_widths, 1):
+        ws.column_dimensions[chr(64 + i)].width = width
+    
+    # 保存到内存
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    return send_file(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name="用户列表.xlsx"
+    )
+
+
+@bp.get("/export/projects")
+@require_roles(["admin"])
+def export_projects():
+    """导出项目数据到Excel"""
+    from io import BytesIO
+    from flask import send_file
+    
+    try:
+        from openpyxl import Workbook
+    except ImportError:
+        return jsonify({"message": "服务器未安装openpyxl库"}), 500
+    
+    post_type = (request.args.get("post_type") or "").strip()
+    project_status = (request.args.get("project_status") or "").strip()
+    
+    q = TeacherPost.query
+    if post_type in {"project", "innovation", "competition"}:
+        q = q.filter_by(post_type=post_type)
+    if project_status:
+        q = q.filter_by(project_status=project_status)
+    
+    posts = q.order_by(TeacherPost.created_at.desc()).all()
+    
+    # 创建工作簿
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "项目列表"
+    
+    # 写入表头
+    headers = ["项目名称", "类型", "教师", "招募人数", "已确认人数", "状态", "创建时间"]
+    ws.append(headers)
+    
+    # 写入数据
+    type_map = {"project": "科研项目", "innovation": "大创项目", "competition": "学科竞赛"}
+    status_map = {"recruiting": "招募中", "in_progress": "进行中", "completed": "已完成", "closed": "已关闭"}
+    
+    for p in posts:
+        teacher = User.query.get(p.teacher_user_id)
+        confirmed_count = CooperationRequest.query.filter_by(
+            post_id=p.id,
+            final_status=CooperationStatus.confirmed.value
+        ).count()
+        
+        ws.append([
+            p.title,
+            type_map.get(p.post_type, p.post_type),
+            teacher.display_name if teacher else "",
+            p.recruit_count or "",
+            confirmed_count,
+            status_map.get(p.project_status, p.project_status or "招募中"),
+            p.created_at.strftime("%Y-%m-%d %H:%M") if p.created_at else ""
+        ])
+    
+    # 调整列宽
+    column_widths = [30, 12, 15, 12, 12, 12, 20]
+    for i, width in enumerate(column_widths, 1):
+        ws.column_dimensions[chr(64 + i)].width = width
+    
+    # 保存到内存
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    return send_file(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name="项目列表.xlsx"
+    )
+
+
+@bp.post("/import/users")
+@require_roles(["admin"])
+def import_users():
+    """从Excel导入用户数据"""
+    from ..utils import hash_password, now_utc
+    
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        return jsonify({"message": "服务器未安装openpyxl库"}), 500
+    
+    if "file" not in request.files:
+        return jsonify({"message": "请上传文件"}), 400
+    
+    file = request.files["file"]
+    if not file.filename.endswith((".xlsx", ".xls")):
+        return jsonify({"message": "请上传Excel文件(.xlsx或.xls)"}), 400
+    
+    try:
+        wb = load_workbook(file)
+        ws = wb.active
+    except Exception as e:
+        return jsonify({"message": f"文件解析失败: {str(e)}"}), 400
+    
+    # 解析数据
+    rows = list(ws.iter_rows(min_row=2, values_only=True))  # 跳过表头
+    
+    results = {
+        "total": len(rows),
+        "success": 0,
+        "failed": 0,
+        "errors": []
+    }
+    
+    role_map = {"学生": "student", "教师": "teacher", "管理员": "admin"}
+    
+    for idx, row in enumerate(rows, start=2):
+        if not row or not any(row):
+            continue
+        
+        try:
+            role_text = str(row[0] or "").strip()
+            username = str(row[1] or "").strip()
+            display_name = str(row[2] or "").strip() if len(row) > 2 else ""
+            password = str(row[3] or "123456").strip() if len(row) > 3 else "123456"
+            
+            # 验证必填字段
+            if not role_text:
+                results["errors"].append({"row": idx, "message": "角色不能为空"})
+                results["failed"] += 1
+                continue
+            
+            if not username:
+                results["errors"].append({"row": idx, "message": "学号/工号不能为空"})
+                results["failed"] += 1
+                continue
+            
+            # 转换角色
+            role = role_map.get(role_text, role_text.lower())
+            if role not in {"student", "teacher", "admin"}:
+                results["errors"].append({"row": idx, "message": f"无效的角色: {role_text}"})
+                results["failed"] += 1
+                continue
+            
+            # 检查用户名是否已存在
+            if User.query.filter_by(username=username).first():
+                results["errors"].append({"row": idx, "message": f"用户名已存在: {username}"})
+                results["failed"] += 1
+                continue
+            
+            # 创建用户
+            u = User(
+                username=username,
+                password_hash=hash_password(password),
+                role=role,
+                display_name=display_name or username,
+                is_active=True,
+                created_at=now_utc(),
+                must_change_password=password == "123456",
+            )
+            db.session.add(u)
+            results["success"] += 1
+            
+        except Exception as e:
+            results["errors"].append({"row": idx, "message": str(e)})
+            results["failed"] += 1
+    
+    db.session.commit()
+    
+    return jsonify(results)
+
+
+@bp.get("/import/users/template")
+@require_roles(["admin"])
+def get_import_template():
+    """获取用户导入模板"""
+    from io import BytesIO
+    from flask import send_file
+    
+    try:
+        from openpyxl import Workbook
+    except ImportError:
+        return jsonify({"message": "服务器未安装openpyxl库"}), 500
+    
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "用户导入模板"
+    
+    # 写入表头
+    headers = ["角色", "学号/工号", "姓名", "初始密码(可选)"]
+    ws.append(headers)
+    
+    # 写入示例数据
+    ws.append(["学生", "221002501", "张三", "123456"])
+    ws.append(["学生", "221002502", "李四", ""])
+    ws.append(["教师", "10010001", "王老师", "teacher123"])
+    
+    # 调整列宽
+    column_widths = [10, 15, 15, 20]
+    for i, width in enumerate(column_widths, 1):
+        ws.column_dimensions[chr(64 + i)].width = width
+    
+    # 保存到内存
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    return send_file(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name="用户导入模板.xlsx"
+    )

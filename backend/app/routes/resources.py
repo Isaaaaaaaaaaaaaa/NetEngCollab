@@ -1,7 +1,7 @@
 import os
 
 from flask import Blueprint, jsonify, request, send_file
-from flask_jwt_extended import get_jwt_identity, jwt_required
+from flask_jwt_extended import get_jwt_identity, jwt_required, decode_token
 
 from ..extensions import db
 from ..models import Comment, File, Reaction, Resource, ReviewStatus, Role, User
@@ -43,14 +43,47 @@ def upload_file():
 
 
 @bp.get("/files/<int:file_id>")
-@jwt_required()
 def download_file(file_id: int):
-    user = User.query.get(int(get_jwt_identity()))
+    """
+    文件下载接口
+    支持两种认证方式：
+    1. Authorization header (标准JWT认证)
+    2. URL query parameter: ?token=<jwt_token> (用于新标签页打开)
+    """
+    user = None
+    
+    # 方式1: 尝试从Authorization header获取token
+    if request.headers.get("Authorization"):
+        try:
+            from flask_jwt_extended import verify_jwt_in_request
+            verify_jwt_in_request()
+            user_id = get_jwt_identity()
+            if user_id:
+                user = User.query.get(int(user_id))
+        except Exception:
+            pass
+    
+    # 方式2: 尝试从URL参数获取token
+    if not user:
+        token = request.args.get("token")
+        if token:
+            try:
+                decoded = decode_token(token)
+                user_id = decoded.get("sub")
+                if user_id:
+                    user = User.query.get(int(user_id))
+            except Exception:
+                pass
+    
+    # 验证用户
     if not user or not user.is_active:
-        return jsonify({"message": "未登录"}), 401
+        return jsonify({"message": "未登录或认证已过期"}), 401
+    
+    # 查找文件
     record = File.query.get(file_id)
     if not record:
         return jsonify({"message": "文件不存在"}), 404
+    
     return send_file(storage_path(record.storage_name), as_attachment=True, download_name=record.original_name)
 
 

@@ -67,31 +67,37 @@
             <template #header>
               <div style="display: flex; align-items: center; justify-content: space-between;">
                 <div class="page-subtitle">当前合作项目</div>
-                <el-button link type="primary" size="small" @click="$router.push({ name: 'student-projects' })">
-                  查看项目
+                <el-button link type="primary" size="small" @click="$router.push({ name: 'student-cooperation' })">
+                  查看进展
                 </el-button>
               </div>
             </template>
             <el-empty v-if="!projects.length" description="还没有合作项目，可先浏览教师发布的项目" />
             <el-scrollbar v-else class="dash-table-scroll">
-              <el-table
-                :data="pagedProjects"
-                size="small"
-                style="width: 100%;"
-                border
-                :show-header="false"
-              >
-                <el-table-column prop="title" min-width="200">
-                  <template #default="scope">
-                    <span style="font-size: 13px;" class="truncate">{{ scope.row.title }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column width="90" align="right">
-                  <template #default>
+              <div class="project-cards">
+                <div 
+                  v-for="p in pagedProjects" 
+                  :key="p.id" 
+                  class="project-card clickable"
+                  @click="goToCooperation(p.id)"
+                >
+                  <div class="project-card-header">
+                    <span class="project-title truncate">{{ p.title }}</span>
                     <span class="pill badge-amber">进行中</span>
-                  </template>
-                </el-table-column>
-              </el-table>
+                  </div>
+                  <div v-if="p.upcoming_milestone" class="milestone-info">
+                    <el-icon style="color: #f59e0b;"><Clock /></el-icon>
+                    <span class="milestone-text">
+                      {{ p.upcoming_milestone.title }} - 
+                      <span class="milestone-due">{{ formatMilestoneDue(p.upcoming_milestone.due_date) }}</span>
+                    </span>
+                  </div>
+                  <div v-if="p.has_recent_updates" class="update-badge">
+                    <span class="update-dot"></span>
+                    <span>有新更新</span>
+                  </div>
+                </div>
+              </div>
             </el-scrollbar>
             <div v-if="projects.length > projectPageSize" style="margin-top:8px; text-align:right;">
               <el-pagination
@@ -139,10 +145,12 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import axios from "axios";
 import { ElMessage } from "element-plus";
+import { Clock } from "@element-plus/icons-vue";
 
-
+const router = useRouter();
 const topProjects = ref<any[]>([]);
 const projects = ref<any[]>([]);
 const skills = ref<any[]>([]);
@@ -225,6 +233,28 @@ async function rejectInvite(r: any) {
 }
 
 
+// 跳转到合作进展页面
+function goToCooperation(projectId: number) {
+  router.push({ name: 'student-cooperation', query: { project: projectId } });
+}
+
+
+// 格式化里程碑截止日期
+function formatMilestoneDue(dueDate: string): string {
+  if (!dueDate) return '';
+  const due = new Date(dueDate);
+  const now = new Date();
+  const diffTime = due.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diffDays < 0) return '已过期';
+  if (diffDays === 0) return '今天';
+  if (diffDays === 1) return '明天';
+  if (diffDays <= 7) return `${diffDays}天后`;
+  return due.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+}
+
+
 onMounted(() => {
   loadMatch();
   loadProjects();
@@ -276,5 +306,86 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 项目卡片样式 */
+.project-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.project-card {
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fafafa;
+  transition: all 0.2s ease;
+}
+
+.project-card.clickable {
+  cursor: pointer;
+}
+
+.project-card.clickable:hover {
+  background: #f0f9ff;
+  border-color: #93c5fd;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+}
+
+.project-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.project-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  flex: 1;
+}
+
+.milestone-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: #fffbeb;
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.milestone-text {
+  color: #92400e;
+}
+
+.milestone-due {
+  font-weight: 500;
+  color: #d97706;
+}
+
+.update-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #059669;
+}
+
+.update-dot {
+  width: 6px;
+  height: 6px;
+  background: #10b981;
+  border-radius: 50%;
+  animation: blink 1.5s infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 </style>

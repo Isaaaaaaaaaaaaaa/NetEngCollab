@@ -174,5 +174,28 @@ def check_and_start_project(post_id: int):
     except Exception as e:
         print(f"发送学生通知失败: {e}")
     
+    # 通知待处理申请的学生项目已满员
+    try:
+        pending_requests = CooperationRequest.query.filter_by(
+            post_id=post_id,
+            final_status=CooperationStatus.pending.value
+        ).all()
+        
+        for req in pending_requests:
+            student = User.query.get(req.student_user_id)
+            if student:
+                push_notification(
+                    user_id=student.id,
+                    notif_type="project_full",
+                    title="项目已满员",
+                    payload={
+                        "post_id": post_id,
+                        "post_title": post.title,
+                        "summary": f"您申请的项目《{post.title}》已达到招募人数上限，暂停接受新申请"
+                    }
+                )
+    except Exception as e:
+        print(f"发送满员通知失败: {e}")
+    
     db.session.commit()
     return True

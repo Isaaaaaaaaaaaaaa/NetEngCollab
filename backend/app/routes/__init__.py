@@ -12,6 +12,7 @@ def register_routes(app: Flask):
     from .posts import bp as posts_bp
     from .progress import bp as progress_bp
     from .resources import bp as resources_bp
+    from .role_tags import bp as role_tags_bp
     from .teamup import bp as teamup_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
@@ -24,6 +25,7 @@ def register_routes(app: Flask):
     app.register_blueprint(cooperation_bp, url_prefix="/api")
     app.register_blueprint(forum_bp, url_prefix="/api")
     app.register_blueprint(teamup_bp, url_prefix="/api")
+    app.register_blueprint(role_tags_bp, url_prefix="/api")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
 
     @app.get("/api/health")

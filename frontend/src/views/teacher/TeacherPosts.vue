@@ -149,13 +149,24 @@
                     >
                       <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
                         <div style="flex: 1; min-width: 0;">
-                          <div style="font-weight: 500; margin-bottom: 4px;">{{ r.student?.display_name || '学生' }}</div>
+                          <div style="font-weight: 500; margin-bottom: 4px;">
+                            <StudentProfilePopover v-if="r.student?.id" :student-id="r.student.id">
+                              <span class="student-name-link">{{ r.student?.display_name || '学生' }}</span>
+                            </StudentProfilePopover>
+                            <span v-else>{{ r.student?.display_name || '学生' }}</span>
+                          </div>
                           <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
                             <span class="pill" :class="statusClass(r)" style="font-size:11px;">
                               {{ statusLabel(r) }}
                             </span>
-                            <span v-if="r.student_role" class="tag" style="font-size:11px;">
-                              角色：{{ r.student_role }}
+                            <!-- 显示学生角色标签 -->
+                            <template v-if="r.applied_roles?.length">
+                              <span v-for="role in r.applied_roles" :key="role" class="tag" style="font-size:11px;">
+                                {{ role }}
+                              </span>
+                            </template>
+                            <span v-else-if="!r.applied_roles?.length && r.final_status === 'confirmed'" class="tag" style="font-size:11px; color: var(--app-muted);">
+                              未分配角色
                             </span>
                             <span v-if="r.custom_status" class="tag" style="font-size:11px;">
                               状态：{{ r.custom_status }}
@@ -240,6 +251,13 @@
         <el-form-item label="标签（逗号分隔）">
           <el-input v-model="form.tags" placeholder="如：网络安全, 目标检测" />
         </el-form-item>
+        <el-form-item label="招募角色">
+          <RoleTagSelector
+            v-model="form.required_roles"
+            hint="选择项目需要招募的角色类型（可选）"
+            add-button-text="添加招募角色"
+          />
+        </el-form-item>
         <el-form-item label="招募人数">
           <el-input-number v-model="form.recruit_count" :min="1" :max="99" controls-position="right" />
         </el-form-item>
@@ -314,6 +332,13 @@
         <el-form-item label="标签（逗号分隔）">
           <el-input v-model="editForm.tags" />
         </el-form-item>
+        <el-form-item label="招募角色">
+          <RoleTagSelector
+            v-model="editForm.required_roles"
+            hint="选择项目需要招募的角色类型（可选）"
+            add-button-text="添加招募角色"
+          />
+        </el-form-item>
         <el-form-item label="招募人数">
           <el-input-number v-model="editForm.recruit_count" :min="1" :max="99" controls-position="right" />
         </el-form-item>
@@ -366,6 +391,8 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import axios from "axios";
 import { ElMessage, ElMessageBox } from "element-plus";
+import StudentProfilePopover from "../../components/StudentProfilePopover.vue";
+import RoleTagSelector from "../../components/RoleTagSelector.vue";
 
 const route = useRoute();
 
@@ -394,6 +421,7 @@ const form = reactive({
   content: "",
   tech_stack: "",
   tags: "",
+  required_roles: [] as string[],
   recruit_count: null as number | null,
   duration: "",
   outcome: "",
@@ -411,6 +439,7 @@ const editForm = reactive({
   content: "",
   tech_stack: "",
   tags: "",
+  required_roles: [] as string[],
   recruit_count: null as number | null,
   duration: "",
   outcome: "",
@@ -543,7 +572,8 @@ async function publish() {
     tags: form.tags
       .split(/[,，]/)
       .map(x => x.trim())
-      .filter(x => x)
+      .filter(x => x),
+    required_roles: form.required_roles
   });
   hint.value = true;
   setTimeout(() => {
@@ -555,6 +585,7 @@ async function publish() {
   form.content = "";
   form.tech_stack = "";
   form.tags = "";
+  form.required_roles = [];
   form.recruit_count = null;
   form.duration = "";
   form.outcome = "";
@@ -763,7 +794,7 @@ function exportStudentList() {
     ["姓名", "角色", "状态", "申请时间"].join(","),
     ...confirmedStudents.value.map((s: any) => [
       s.student?.display_name || "未知",
-      s.student_role || "未设置",
+      (s.applied_roles?.length ? s.applied_roles.join("、") : "未设置"),
       s.custom_status || "未设置",
       s.created_at ? new Date(s.created_at).toLocaleDateString() : ""
     ].join(","))
@@ -892,5 +923,16 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.student-name-link {
+  cursor: pointer;
+  color: #409eff;
+  transition: color 0.2s;
+}
+
+.student-name-link:hover {
+  color: #66b1ff;
+  text-decoration: underline;
 }
 </style>

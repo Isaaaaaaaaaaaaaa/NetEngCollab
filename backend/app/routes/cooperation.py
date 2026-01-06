@@ -1,10 +1,12 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
+from datetime import timedelta
 
 from ..extensions import db
-from ..models import CooperationProject, CooperationRequest, CooperationStatus, Role, TeacherPost, User
-from ..utils import now_utc
+from ..models import CooperationProject, CooperationRequest, CooperationStatus, Milestone, ProgressUpdate, Role, TeacherPost, User
+from ..utils import now_utc, json_dumps, json_loads
 from ..services import push_notification, check_and_start_project
+from .role_tags import validate_role_tags
 
 
 bp = Blueprint("cooperation", __name__)
@@ -83,6 +85,21 @@ def create_request():
     if initiated_by == Role.teacher.value:
         teacher_status = CooperationStatus.accepted.value
 
+    # 处理角色标签
+    applied_roles = []
+    suggested_roles = []
+    
+    if initiated_by == Role.student.value:
+        # 学生申请时可以指定自己期望的角色
+        is_valid, error_msg, applied_roles = validate_role_tags(data.get("applied_roles"))
+        if not is_valid:
+            return jsonify({"message": error_msg}), 400
+    else:
+        # 教师邀请时可以指定建议的角色
+        is_valid, error_msg, suggested_roles = validate_role_tags(data.get("suggested_roles"))
+        if not is_valid:
+            return jsonify({"message": error_msg}), 400
+
     req = CooperationRequest(
         teacher_user_id=teacher_user_id,
         student_user_id=student_user_id,
@@ -91,6 +108,8 @@ def create_request():
         teacher_status=teacher_status,
         student_status=student_status,
         final_status=CooperationStatus.pending.value,
+        applied_roles_json=json_dumps(applied_roles),
+        suggested_roles_json=json_dumps(suggested_roles),
         created_at=now_utc(),
         updated_at=now_utc(),
     )
@@ -159,6 +178,8 @@ def list_requests():
                 "final_status": r.final_status,
                 "student_role": r.student_role,
                 "custom_status": r.custom_status,
+                "applied_roles": json_loads(r.applied_roles_json, []) if hasattr(r, 'applied_roles_json') and r.applied_roles_json else [],
+                "suggested_roles": json_loads(r.suggested_roles_json, []) if hasattr(r, 'suggested_roles_json') and r.suggested_roles_json else [],
                 "created_at": r.created_at.isoformat(),
             }
         )
@@ -286,14 +307,18 @@ def list_projects():
         if r.post_id not in projects_dict:
             post = TeacherPost.query.get(r.post_id)
             if post:
+                # 获取项目招募角色
+                required_roles = json_loads(post.required_roles_json, []) if hasattr(post, 'required_roles_json') and post.required_roles_json else []
                 projects_dict[r.post_id] = {
                     "post_id": r.post_id,
                     "title": post.title,
                     "project_status": post.project_status,
+                    "required_roles": required_roles,  # 项目招募角色
                     "students": [],
                     "request_ids": [],
                     "my_request_id": None,  # 当前用户的请求ID
-                    "my_student_role": None,
+                    "my_applied_roles": [],  # 角色数组
+                    "my_student_role": None,  # 向后兼容
                     "my_custom_status": None
                 }
         
@@ -301,10 +326,12 @@ def list_projects():
         if r.post_id in projects_dict:
             student = User.query.get(r.student_user_id)
             if student:
+                applied_roles = json_loads(r.applied_roles_json, [])
                 projects_dict[r.post_id]["students"].append({
                     "id": student.id,
                     "display_name": student.display_name,
-                    "student_role": r.student_role,
+                    "applied_roles": applied_roles,  # 角色数组
+                    "student_role": applied_roles[0] if applied_roles else None,  # 向后兼容
                     "custom_status": r.custom_status
                 })
                 projects_dict[r.post_id]["request_ids"].append(r.id)
@@ -312,8 +339,51 @@ def list_projects():
                 # 如果是当前学生的请求，记录下来
                 if user.role == Role.student.value and r.student_user_id == user.id:
                     projects_dict[r.post_id]["my_request_id"] = r.id
-                    projects_dict[r.post_id]["my_student_role"] = r.student_role
+                    projects_dict[r.post_id]["my_applied_roles"] = applied_roles  # 角色数组
+                    projects_dict[r.post_id]["my_student_role"] = applied_roles[0] if applied_roles else None  # 向后兼容
                     projects_dict[r.post_id]["my_custom_status"] = r.custom_status
+    
+    # 获取里程碑和更新信息
+    now = now_utc()
+    seven_days_later = now + timedelta(days=7)
+    three_days_ago = now - timedelta(days=3)
+    
+    for post_id, project_data in projects_dict.items():
+        # 获取该项目下所有合作项目的ID
+        project_ids = []
+        for req_id in project_data["request_ids"]:
+            proj = CooperationProject.query.filter_by(request_id=req_id).first()
+            if proj:
+                project_ids.append(proj.id)
+        
+        # 查找即将到期的里程碑（7天内）
+        upcoming_milestone = None
+        if project_ids:
+            milestone = Milestone.query.filter(
+                Milestone.project_id.in_(project_ids),
+                Milestone.status != 'done',
+                Milestone.due_date != None,
+                Milestone.due_date >= now,
+                Milestone.due_date <= seven_days_later
+            ).order_by(Milestone.due_date.asc()).first()
+            
+            if milestone:
+                upcoming_milestone = {
+                    "title": milestone.title,
+                    "due_date": milestone.due_date.isoformat() if milestone.due_date else None
+                }
+        
+        # 检查是否有最近更新（3天内）
+        has_recent_updates = False
+        if project_ids:
+            recent_update = ProgressUpdate.query.filter(
+                ProgressUpdate.project_id.in_(project_ids),
+                ProgressUpdate.created_at >= three_days_ago
+            ).first()
+            has_recent_updates = recent_update is not None
+        
+        project_data["upcoming_milestone"] = upcoming_milestone
+        project_data["has_recent_updates"] = has_recent_updates
     
     # 转换为列表并添加ID（使用post_id作为唯一标识）
     items = []
@@ -322,14 +392,18 @@ def list_projects():
             "id": post_id,  # 使用post_id作为项目ID
             "title": project_data["title"],
             "project_status": project_data["project_status"],
+            "required_roles": project_data["required_roles"],  # 项目招募角色
             "students": project_data["students"],
             "student_count": len(project_data["students"]),
-            "request_ids": project_data["request_ids"]
+            "request_ids": project_data["request_ids"],
+            "upcoming_milestone": project_data["upcoming_milestone"],
+            "has_recent_updates": project_data["has_recent_updates"]
         }
         # 为学生添加自己的请求信息
         if user.role == Role.student.value:
             item["my_request_id"] = project_data["my_request_id"]
-            item["my_student_role"] = project_data["my_student_role"]
+            item["my_applied_roles"] = project_data["my_applied_roles"]  # 角色数组
+            item["my_student_role"] = project_data["my_student_role"]  # 向后兼容
             item["my_custom_status"] = project_data["my_custom_status"]
         items.append(item)
     
@@ -342,8 +416,8 @@ def list_projects():
 def update_student_info(req_id: int):
     """
     更新合作请求中的学生信息（角色和状态）
-    教师可以编辑所有学生的信息
-    学生只能编辑自己的信息
+    教师可以编辑学生的角色
+    学生可以编辑自己的角色和状态
     """
     user = User.query.get(int(get_jwt_identity()))
     if not user or not user.is_active:
@@ -356,7 +430,7 @@ def update_student_info(req_id: int):
     
     # 验证权限
     if user.role == Role.teacher.value:
-        # 教师只能编辑自己项目的学生信息
+        # 教师只能编辑自己项目的学生角色
         if req.teacher_user_id != user.id:
             return jsonify({"message": "无权编辑该学生信息"}), 403
     elif user.role == Role.student.value:
@@ -370,17 +444,26 @@ def update_student_info(req_id: int):
     
     # 获取请求数据
     data = request.get_json(force=True)
-    student_role = data.get("student_role")
+    applied_roles = data.get("applied_roles")  # 新增：角色数组
     custom_status = data.get("custom_status")
     
-    # 输入验证
-    if student_role is not None:
-        student_role = str(student_role).strip()
-        if len(student_role) > 64:
-            return jsonify({"message": "学生角色不能超过64个字符"}), 400
-        req.student_role = student_role if student_role else None
+    # 记录原始角色用于通知
+    old_roles = json_loads(req.applied_roles_json, [])
+    role_changed = False
     
-    if custom_status is not None:
+    # 验证并处理角色数组
+    if applied_roles is not None:
+        is_valid, error_msg, cleaned_roles = validate_role_tags(applied_roles)
+        if not is_valid:
+            return jsonify({"message": error_msg}), 400
+        
+        # 教师和学生都可以编辑角色
+        if cleaned_roles != old_roles:
+            req.applied_roles_json = json_dumps(cleaned_roles)
+            role_changed = True
+    
+    # 学生可以编辑状态
+    if user.role == Role.student.value and custom_status is not None:
         custom_status = str(custom_status).strip()
         if len(custom_status) > 64:
             return jsonify({"message": "自定义状态不能超过64个字符"}), 400
@@ -389,12 +472,30 @@ def update_student_info(req_id: int):
     req.updated_at = now_utc()
     db.session.commit()
     
+    # 如果教师更新了角色，发送通知给学生
+    if role_changed and user.role == Role.teacher.value:
+        student = User.query.get(req.student_user_id)
+        post = TeacherPost.query.get(req.post_id) if req.post_id else None
+        if student:
+            new_roles = json_loads(req.applied_roles_json, [])
+            role_text = "、".join(new_roles) if new_roles else "未分配"
+            push_notification(
+                user_id=student.id,
+                notif_type="role_updated",
+                title="项目角色已更新",
+                payload={
+                    "summary": f"教师在项目「{post.title if post else '未知项目'}」中为您分配了角色：{role_text}"
+                },
+            )
+    
+    # 返回更新后的数据
+    updated_roles = json_loads(req.applied_roles_json, [])
     return jsonify({
         "success": True,
         "message": "信息更新成功",
         "data": {
             "id": req.id,
-            "student_role": req.student_role,
+            "applied_roles": updated_roles,
             "custom_status": req.custom_status
         }
     })
@@ -424,7 +525,8 @@ def get_my_request_for_project(post_id: int):
     return jsonify({
         "id": req.id,
         "post_id": req.post_id,
-        "student_role": req.student_role,
+        "applied_roles": json_loads(req.applied_roles_json, []),
+        "student_role": req.student_role,  # 向后兼容
         "custom_status": req.custom_status,
         "final_status": req.final_status,
         "teacher_status": req.teacher_status,
@@ -511,6 +613,9 @@ def get_grouped_requests():
     if user.role != Role.teacher.value:
         return jsonify({"message": "无权限"}), 403
     
+    # 获取筛选参数
+    role_filter = request.args.get("role")  # 按角色标签筛选
+    
     # 查询该教师的所有合作请求
     requests = CooperationRequest.query.filter_by(
         teacher_user_id=user.id
@@ -523,16 +628,29 @@ def get_grouped_requests():
         if not post_id:
             continue
         
+        # 获取申请的角色标签
+        applied_roles = json_loads(req.applied_roles_json, []) if hasattr(req, 'applied_roles_json') and req.applied_roles_json else []
+        suggested_roles = json_loads(req.suggested_roles_json, []) if hasattr(req, 'suggested_roles_json') and req.suggested_roles_json else []
+        
+        # 如果有角色筛选，检查是否匹配
+        if role_filter:
+            all_roles = applied_roles + suggested_roles
+            if role_filter not in all_roles:
+                continue
+        
         if post_id not in project_groups:
             post = TeacherPost.query.get(post_id)
             if not post:
                 continue
             
+            required_roles = json_loads(post.required_roles_json, []) if hasattr(post, 'required_roles_json') and post.required_roles_json else []
+            
             project_groups[post_id] = {
                 "project": {
                     "id": post.id,
                     "title": post.title,
-                    "project_status": post.project_status
+                    "project_status": post.project_status,
+                    "required_roles": required_roles
                 },
                 "applications": [],
                 "pending_count": 0
@@ -551,7 +669,9 @@ def get_grouped_requests():
             "teacher_status": req.teacher_status,
             "student_status": req.student_status,
             "student_role": req.student_role,
-            "custom_status": req.custom_status
+            "custom_status": req.custom_status,
+            "applied_roles": applied_roles,
+            "suggested_roles": suggested_roles
         }
         
         project_groups[post_id]["applications"].append(application)

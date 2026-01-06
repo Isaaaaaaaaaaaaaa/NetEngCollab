@@ -24,8 +24,10 @@
                 @click="select(p.id)"
               >
                 <div class="truncate" style="max-width:200px; font-weight: 500;">{{ p.title }}</div>
-                <div v-if="p.my_student_role || p.my_custom_status" style="margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px;">
-                  <span v-if="p.my_student_role" class="tag" style="font-size: 10px;">{{ p.my_student_role }}</span>
+                <div v-if="(p.my_applied_roles && p.my_applied_roles.length) || p.my_custom_status" style="margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px;">
+                  <template v-if="p.my_applied_roles && p.my_applied_roles.length">
+                    <span v-for="role in p.my_applied_roles" :key="role" class="tag" style="font-size: 10px;">{{ role }}</span>
+                  </template>
                   <span v-if="p.my_custom_status" class="pill badge-blue" style="font-size: 10px;">{{ p.my_custom_status }}</span>
                 </div>
               </li>
@@ -58,7 +60,12 @@
               <div style="display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px;">
                 <span>
                   角色：
-                  <span style="font-weight: 500;">{{ selectedProject.my_student_role || '未设置' }}</span>
+                  <template v-if="selectedProject.my_applied_roles && selectedProject.my_applied_roles.length">
+                    <span v-for="(role, idx) in selectedProject.my_applied_roles" :key="role" style="font-weight: 500;">
+                      {{ role }}<template v-if="idx < selectedProject.my_applied_roles.length - 1">、</template>
+                    </span>
+                  </template>
+                  <span v-else style="font-weight: 500;">未设置</span>
                 </span>
                 <span>
                   状态：
@@ -140,19 +147,14 @@
     </el-row>
 
     <!-- 设置状态弹窗 -->
-    <el-dialog v-model="statusDialogVisible" title="设置我的状态" width="400px">
+    <el-dialog v-model="statusDialogVisible" title="设置我的状态" width="450px">
       <el-form :model="statusForm" label-position="top" size="small">
         <el-form-item label="我的角色">
-          <el-select v-model="statusForm.student_role" placeholder="选择或输入角色" filterable allow-create clearable style="width: 100%;">
-            <el-option label="前端开发" value="前端开发" />
-            <el-option label="后端开发" value="后端开发" />
-            <el-option label="算法研究" value="算法研究" />
-            <el-option label="数据分析" value="数据分析" />
-            <el-option label="测试" value="测试" />
-            <el-option label="文档撰写" value="文档撰写" />
-            <el-option label="UI设计" value="UI设计" />
-            <el-option label="项目管理" value="项目管理" />
-          </el-select>
+          <RoleTagSelector
+            v-model="statusForm.applied_roles"
+            :suggested-tags="selectedProject?.required_roles || []"
+            hint="选择您在项目中的角色"
+          />
         </el-form-item>
         <el-form-item label="当前状态">
           <el-select v-model="statusForm.custom_status" placeholder="选择或输入状态" filterable allow-create clearable style="width: 100%;">
@@ -179,6 +181,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import axios from "axios";
 import { ElMessage } from "element-plus";
+import RoleTagSelector from "../../components/RoleTagSelector.vue";
 
 
 const projects = ref<any[]>([]);
@@ -188,7 +191,7 @@ const updates = ref<any[]>([]);
 const updateContent = ref("");
 const statusDialogVisible = ref(false);
 const statusForm = reactive({
-  student_role: "",
+  applied_roles: [] as string[],
   custom_status: ""
 });
 
@@ -236,7 +239,7 @@ async function addUpdate() {
 
 function openStatusDialog() {
   if (!selectedProject.value) return;
-  statusForm.student_role = selectedProject.value.my_student_role || "";
+  statusForm.applied_roles = selectedProject.value.my_applied_roles || [];
   statusForm.custom_status = selectedProject.value.my_custom_status || "";
   statusDialogVisible.value = true;
 }
@@ -250,7 +253,7 @@ async function saveStatus() {
   
   try {
     await axios.put(`/api/cooperation/requests/${selectedProject.value.my_request_id}/student-info`, {
-      student_role: statusForm.student_role || null,
+      applied_roles: statusForm.applied_roles,
       custom_status: statusForm.custom_status || null
     });
     

@@ -99,11 +99,20 @@ async function markRead(id: number) {
 
 
 async function markAllRead() {
-  const unreadItems = (items.value || []).filter(x => !x.is_read);
-  for (const n of unreadItems) {
-    await markRead(n.id);
+  try {
+    await axios.post("/api/notifications/read-all");
+    // 更新本地状态
+    items.value.forEach(n => {
+      n.is_read = true;
+    });
+  } catch {
+    // 降级到逐个标记
+    const unreadItems = (items.value || []).filter(x => !x.is_read);
+    for (const n of unreadItems) {
+      await markRead(n.id);
+    }
+    await load();
   }
-  await load();
 }
 
 

@@ -83,6 +83,16 @@
         </div>
       </div>
 
+      <!-- 招募角色 -->
+      <div class="info-section" v-if="projectData.required_roles && projectData.required_roles.length > 0">
+        <h4>招募角色</h4>
+        <div class="tags">
+          <el-tag v-for="role in projectData.required_roles" :key="role" type="warning">
+            {{ role }}
+          </el-tag>
+        </div>
+      </div>
+
       <!-- 预期成果 -->
       <div class="info-section" v-if="projectData.outcome">
         <h4>预期成果</h4>
@@ -114,6 +124,21 @@
           <span v-if="projectData.teacher.title" class="teacher-title">
             （{{ projectData.teacher.title }}）
           </span>
+        </div>
+      </div>
+
+      <!-- 我的申请信息 -->
+      <div class="info-section" v-if="props.requestStatus">
+        <h4>我的申请</h4>
+        <div class="application-info">
+          <div class="info-row">
+            <span class="label">申请状态：</span>
+            <el-tag :type="getApplyTagType()">{{ getApplyStatusText() }}</el-tag>
+          </div>
+          <div class="info-row" v-if="props.requestStatus.created_at">
+            <span class="label">申请时间：</span>
+            <span>{{ formatDateTime(props.requestStatus.created_at) }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -149,6 +174,7 @@ interface Props {
   projectId: number | null
   showApplyButton?: boolean
   requestStatus?: any
+  applicationDate?: string | null
 }
 
 interface Emits {
@@ -158,7 +184,8 @@ interface Emits {
 
 const props = withDefaults(defineProps<Props>(), {
   showApplyButton: false,
-  requestStatus: null
+  requestStatus: null,
+  applicationDate: null
 })
 const emit = defineEmits<Emits>()
 
@@ -211,9 +238,14 @@ const handleClose = () => {
   dialogVisible.value = false
 }
 
-const downloadAttachment = () => {
+const downloadAttachment = async () => {
   if (projectData.value?.attachment_file_id) {
-    window.open(`/api/files/${projectData.value.attachment_file_id}`, '_blank')
+    // 获取token用于认证
+    const token = localStorage.getItem('token')
+    const url = token 
+      ? `/api/files/${projectData.value.attachment_file_id}?token=${encodeURIComponent(token)}`
+      : `/api/files/${projectData.value.attachment_file_id}`
+    window.open(url, '_blank')
   }
 }
 
@@ -251,6 +283,30 @@ const getApplyStatusText = () => {
   if (r.teacher_status === 'accepted' && r.student_status === 'pending') return '待我确认'
   if (r.teacher_status === 'pending' && r.student_status === 'accepted') return '待教师确认'
   return '待审核'
+}
+
+// 获取申请状态标签类型
+const getApplyTagType = () => {
+  if (!props.requestStatus) return 'info'
+  
+  const r = props.requestStatus
+  if (r.final_status === 'confirmed') return 'success'
+  if (r.final_status === 'rejected') return 'danger'
+  if (r.teacher_status === 'accepted' && r.student_status === 'pending') return 'warning'
+  return 'info'
+}
+
+// 格式化日期时间
+const formatDateTime = (dateStr: string) => {
+  if (!dateStr) return ''
+  const date = new Date(dateStr)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
 }
 
 // 获取不可申请的原因
@@ -457,6 +513,13 @@ const formatDate = (dateStr: string) => {
   background: #f5f7fa;
   border-radius: 8px;
   display: inline-block;
+}
+
+.application-info {
+  padding: 12px;
+  background: #f0f9ff;
+  border-radius: 8px;
+  border: 1px solid #bae6fd;
 }
 
 .dialog-footer {

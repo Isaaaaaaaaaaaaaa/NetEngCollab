@@ -237,6 +237,12 @@ body {
   color: #b45309;
 }
 
+.badge-gray {
+  background: rgba(107, 114, 128, 0.08);
+  border-color: rgba(107, 114, 128, 0.32);
+  color: #4b5563;
+}
+
 .section-title {
   font-size: 18px;
   font-weight: 600;

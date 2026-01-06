@@ -4,11 +4,49 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from ..extensions import db
-from ..models import CooperationProject, CooperationRequest, Milestone, ProgressUpdate, Role, User
+from ..models import CooperationProject, CooperationRequest, Milestone, ProgressUpdate, Role, TeacherPost, User
 from ..utils import now_utc
+from ..services import push_notification
 
 
 bp = Blueprint("progress", __name__)
+
+
+def _notify_milestone_change(post_id: int, milestone_title: str, action: str):
+    """通知项目参与者里程碑变更"""
+    post = TeacherPost.query.get(post_id)
+    if not post:
+        return
+    
+    # 获取所有已确认的合作请求
+    confirmed_requests = CooperationRequest.query.filter_by(
+        post_id=post_id,
+        final_status="confirmed"
+    ).all()
+    
+    student_ids = set(r.student_user_id for r in confirmed_requests if r.student_user_id)
+    
+    if action == "created":
+        title = "新里程碑已添加"
+        summary = f"项目《{post.title}》添加了新里程碑：{milestone_title}"
+        notif_type = "milestone_new"
+    elif action == "completed":
+        title = "里程碑已完成"
+        summary = f"项目《{post.title}》的里程碑「{milestone_title}」已完成"
+        notif_type = "milestone_done"
+    else:
+        return
+    
+    for student_id in student_ids:
+        try:
+            push_notification(
+                user_id=student_id,
+                notif_type=notif_type,
+                title=title,
+                payload={"summary": summary, "post_id": post_id}
+            )
+        except Exception as e:
+            print(f"发送里程碑通知失败: {e}")
 
 
 def _project_and_request(project_id: int):
@@ -96,6 +134,10 @@ def add_milestone_by_post(post_id: int):
     m = Milestone(project_id=project_id, title=title, due_date=due_date, status=(data.get("status") or "todo"), created_at=now_utc())
     db.session.add(m)
     db.session.commit()
+    
+    # 通知项目参与者
+    _notify_milestone_change(post_id, title, "created")
+    
     return jsonify({"id": m.id})
 
 
@@ -112,6 +154,8 @@ def update_milestone_by_post(post_id: int, milestone_id: int):
         return jsonify({"message": "不存在"}), 404
     
     data = request.get_json(force=True)
+    old_status = m.status
+    
     if data.get("title") is not None:
         m.title = (data.get("title") or "").strip()
     if data.get("due_date") is not None:
@@ -119,6 +163,11 @@ def update_milestone_by_post(post_id: int, milestone_id: int):
     if data.get("status") is not None:
         m.status = (data.get("status") or "todo").strip()
     db.session.commit()
+    
+    # 如果状态变为完成，发送通知
+    if old_status != "done" and m.status == "done":
+        _notify_milestone_change(post_id, m.title, "completed")
+    
     return jsonify({"ok": True})
 
 

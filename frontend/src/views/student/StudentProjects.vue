@@ -98,13 +98,28 @@
                 <span style="font-size: 12px;">{{ scope.row.recruit_count || "未设置" }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="周期/截止" min-width="120" align="center">
+            <el-table-column label="周期/截止" min-width="140" align="center">
               <template #default="scope">
                 <div style="display:flex; flex-direction:column; gap:2px;">
                   <span style="font-size:12px;">{{ scope.row.duration || "周期未设定" }}</span>
-                  <span style="font-size:11px; color:var(--app-muted);">
-                    {{ scope.row.deadline ? scope.row.deadline.slice(0, 10) : "无截止时间" }}
-                  </span>
+                  <template v-if="scope.row.deadline">
+                    <span 
+                      v-if="getDeadlineStatus(scope.row.deadline) === 'expired'"
+                      style="font-size:11px; color:#909399;"
+                    >
+                      已截止
+                    </span>
+                    <span 
+                      v-else-if="getDeadlineStatus(scope.row.deadline) === 'urgent'"
+                      style="font-size:11px; color:#f56c6c; font-weight:500;"
+                    >
+                      ⏰ 剩余 {{ getDaysRemaining(scope.row.deadline) }} 天
+                    </span>
+                    <span v-else style="font-size:11px; color:var(--app-muted);">
+                      {{ scope.row.deadline.slice(0, 10) }}
+                    </span>
+                  </template>
+                  <span v-else style="font-size:11px; color:var(--app-muted);">无截止时间</span>
                 </div>
               </template>
             </el-table-column>
@@ -122,17 +137,31 @@
                 <span v-else style="font-size: 12px;">-</span>
               </template>
             </el-table-column>
-            <el-table-column label="我的状态" width="110" align="center">
+            <el-table-column label="我的状态" width="180" align="center">
               <template #default="scope">
-                <span
-                  v-if="requestStatus[scope.row.id]"
-                  class="pill"
-                  :class="statusClass(requestStatus[scope.row.id])"
-                  style="font-size: 11px;"
-                >
-                  {{ statusLabel(requestStatus[scope.row.id]) }}
-                </span>
-                <span v-else style="font-size: 11px; color: var(--app-muted);">未申请</span>
+                <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
+                  <span
+                    v-if="requestStatus[scope.row.id]"
+                    class="pill status-badge"
+                    :class="[statusClass(requestStatus[scope.row.id]), { 'pulse-animation': isAwaitingMyConfirm(requestStatus[scope.row.id]) }]"
+                    style="font-size: 11px;"
+                  >
+                    {{ statusLabel(requestStatus[scope.row.id]) }}
+                  </span>
+                  <span v-else class="pill badge-gray" style="font-size: 11px;">未申请</span>
+                  <!-- 显示教师建议的角色标签 -->
+                  <div v-if="requestStatus[scope.row.id]?.suggested_roles?.length" style="display: flex; flex-wrap: wrap; gap: 2px; justify-content: center;">
+                    <el-tag
+                      v-for="role in requestStatus[scope.row.id].suggested_roles"
+                      :key="role"
+                      size="small"
+                      type="success"
+                      style="font-size: 10px;"
+                    >
+                      {{ role }}
+                    </el-tag>
+                  </div>
+                </div>
               </template>
             </el-table-column>
             <el-table-column label="互动" width="220" align="right">
@@ -220,6 +249,40 @@
       :request-status="selectedProjectId ? requestStatus[selectedProjectId] : null"
       @apply="handleApplyFromModal"
     />
+    
+    <!-- 申请加入弹窗 -->
+    <el-dialog v-model="applyDialogVisible" title="申请加入项目" width="480px">
+      <div v-if="applyingProject" style="margin-bottom: 16px;">
+        <div style="font-size: 14px; font-weight: 500; margin-bottom: 8px;">{{ applyingProject.title }}</div>
+        <div v-if="applyingProject.required_roles?.length" style="margin-bottom: 12px;">
+          <div style="font-size: 12px; color: var(--app-muted); margin-bottom: 4px;">项目招募角色：</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+            <el-tag v-for="role in applyingProject.required_roles" :key="role" size="small" type="info">
+              {{ role }}
+            </el-tag>
+          </div>
+        </div>
+      </div>
+      
+      <el-form label-position="top" size="small">
+        <el-form-item label="选择您期望的角色（可选）">
+          <RoleTagSelector
+            v-model="applyForm.applied_roles"
+            hint="选择您在项目中期望承担的角色"
+            add-button-text="添加角色"
+            :suggested-tags="applyingProject?.required_roles || []"
+            :max-tags="3"
+          />
+        </el-form-item>
+      </el-form>
+      
+      <template #footer>
+        <div style="text-align: right;">
+          <el-button size="small" @click="applyDialogVisible = false">取消</el-button>
+          <el-button type="primary" size="small" @click="submitApply">提交申请</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -231,6 +294,7 @@ import { ElMessage } from "element-plus";
 import InteractionsPanel from "../../components/InteractionsPanel.vue";
 import TeacherDetailModal from "../../components/TeacherDetailModal.vue";
 import ProjectDetailModal from "../../components/ProjectDetailModal.vue";
+import RoleTagSelector from "../../components/RoleTagSelector.vue";
 
 
 const posts = ref<any[]>([]);
@@ -249,6 +313,13 @@ const teacherModalVisible = ref(false);
 const selectedTeacherId = ref<number | null>(null);
 const projectModalVisible = ref(false);
 const selectedProjectId = ref<number | null>(null);
+
+// 申请弹窗相关状态
+const applyDialogVisible = ref(false);
+const applyingProject = ref<any>(null);
+const applyForm = reactive({
+  applied_roles: [] as string[]
+});
 
 
 function typeLabel(t: string) {
@@ -360,8 +431,37 @@ function statusLabel(r: any) {
 
 function statusClass(r: any) {
   if (r.final_status === "confirmed") return "badge-green";
-  if (r.final_status === "rejected") return "badge-amber";
+  if (r.final_status === "rejected") return "badge-red";
+  if (r.teacher_status === "accepted" && r.student_status === "pending") return "badge-amber";
   return "badge-blue";
+}
+
+
+// 检查是否是待我确认状态
+function isAwaitingMyConfirm(r: any): boolean {
+  return r.teacher_status === "accepted" && r.student_status === "pending";
+}
+
+
+// 获取截止日期状态
+function getDeadlineStatus(deadline: string): 'expired' | 'urgent' | 'normal' {
+  const deadlineDate = new Date(deadline);
+  const now = new Date();
+  const diffTime = deadlineDate.getTime() - now.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diffDays < 0) return 'expired';
+  if (diffDays <= 3) return 'urgent';
+  return 'normal';
+}
+
+
+// 获取剩余天数
+function getDaysRemaining(deadline: string): number {
+  const deadlineDate = new Date(deadline);
+  const now = new Date();
+  const diffTime = deadlineDate.getTime() - now.getTime();
+  return Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 }
 
 
@@ -420,14 +520,31 @@ function getUnavailableReason(p: any): string {
 
 
 async function apply(p: any) {
-  const respMe = await axios.get("/api/auth/me");
-  const studentId = respMe.data.id;
-  await axios.post("/api/cooperation/request", {
-    post_id: p.id,
-    student_user_id: studentId
-  });
-  await loadMyRequests();
-  ElMessage.success("已提交合作申请，等待教师确认");
+  // 打开申请弹窗
+  applyingProject.value = p;
+  applyForm.applied_roles = [];
+  applyDialogVisible.value = true;
+}
+
+
+// 提交申请
+async function submitApply() {
+  if (!applyingProject.value) return;
+  
+  try {
+    const respMe = await axios.get("/api/auth/me");
+    const studentId = respMe.data.id;
+    await axios.post("/api/cooperation/request", {
+      post_id: applyingProject.value.id,
+      student_user_id: studentId,
+      applied_roles: applyForm.applied_roles
+    });
+    await loadMyRequests();
+    applyDialogVisible.value = false;
+    ElMessage.success("已提交合作申请，等待教师确认");
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.message || "申请失败，请重试");
+  }
 }
 
 
@@ -470,18 +587,28 @@ function showProjectDetail(projectId: number) {
 
 // 从项目详情弹窗申请加入
 async function handleApplyFromModal(projectId: number) {
-  try {
-    const respMe = await axios.get("/api/auth/me");
-    const studentId = respMe.data.id;
-    await axios.post("/api/cooperation/request", {
-      post_id: projectId,
-      student_user_id: studentId
-    });
-    await loadMyRequests();
+  // 找到项目信息并打开申请弹窗
+  const project = posts.value.find(p => p.id === projectId);
+  if (project) {
+    applyingProject.value = project;
+    applyForm.applied_roles = [];
     projectModalVisible.value = false;
-    ElMessage.success("已提交合作申请，等待教师确认");
-  } catch (err: any) {
-    ElMessage.error(err.response?.data?.message || "申请失败，请重试");
+    applyDialogVisible.value = true;
+  } else {
+    // 如果在列表中找不到，直接提交申请
+    try {
+      const respMe = await axios.get("/api/auth/me");
+      const studentId = respMe.data.id;
+      await axios.post("/api/cooperation/request", {
+        post_id: projectId,
+        student_user_id: studentId
+      });
+      await loadMyRequests();
+      projectModalVisible.value = false;
+      ElMessage.success("已提交合作申请，等待教师确认");
+    } catch (err: any) {
+      ElMessage.error(err.response?.data?.message || "申请失败，请重试");
+    }
   }
 }
 
@@ -674,5 +801,33 @@ watch(
 
 .top10-item.is-last {
   border-bottom: none;
+}
+
+/* 状态徽章样式 */
+.status-badge {
+  transition: all 0.3s ease;
+}
+
+.badge-red {
+  background-color: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+/* 脉冲动画 - 待我确认状态 */
+.pulse-animation {
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(245, 158, 11, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
 }
 </style>

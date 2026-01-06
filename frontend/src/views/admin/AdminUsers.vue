@@ -20,6 +20,18 @@
           style="width: 220px;"
         />
         <el-button size="small" @click="load(true)">筛选</el-button>
+        <el-dropdown @command="handleExportCommand">
+          <el-button size="small">
+            导出 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="all">导出全部用户</el-dropdown-item>
+              <el-dropdown-item command="filtered">导出当前筛选</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-button size="small" @click="importVisible = true">导入Excel</el-button>
         <el-button size="small" @click="batchVisible = true">批量创建</el-button>
         <el-button type="primary" size="small" @click="createVisible = true">创建账号</el-button>
       </el-space>
@@ -200,6 +212,66 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 导入Excel对话框 -->
+    <el-dialog v-model="importVisible" title="导入用户数据" width="520px">
+      <el-form label-position="top" size="small">
+        <el-form-item label="文件格式说明">
+          <div style="font-size:12px; color:var(--app-muted); line-height: 1.6;">
+            请上传Excel文件(.xlsx)，格式要求：
+            <br />第1列：角色（学生/教师/管理员）
+            <br />第2列：学号/工号（必填，不可重复）
+            <br />第3列：姓名（必填）
+            <br />第4列：初始密码（可选，默认123456）
+          </div>
+          <el-button size="small" type="primary" link style="margin-top: 8px;" @click="downloadTemplate">
+            下载导入模板
+          </el-button>
+        </el-form-item>
+        <el-form-item label="选择文件">
+          <el-upload
+            ref="uploadRef"
+            :auto-upload="false"
+            :limit="1"
+            accept=".xlsx,.xls"
+            :on-change="handleFileChange"
+            :on-remove="handleFileRemove"
+          >
+            <el-button size="small">选择Excel文件</el-button>
+          </el-upload>
+        </el-form-item>
+        <el-form-item v-if="importResult" label="导入结果">
+          <div style="font-size:12px; padding: 12px; background: #f5f7fa; border-radius: 6px;">
+            <div>总计：{{ importResult.total }} 条</div>
+            <div style="color: #67c23a;">成功：{{ importResult.success }} 条</div>
+            <div v-if="importResult.failed > 0" style="color: #f56c6c;">失败：{{ importResult.failed }} 条</div>
+            <div v-if="importResult.errors?.length" style="margin-top: 8px;">
+              <div style="font-weight: 500; margin-bottom: 4px;">错误详情：</div>
+              <div v-for="err in importResult.errors.slice(0, 5)" :key="err.row" style="color: #f56c6c;">
+                第{{ err.row }}行：{{ err.message }}
+              </div>
+              <div v-if="importResult.errors.length > 5" style="color: var(--app-muted);">
+                ...还有 {{ importResult.errors.length - 5 }} 条错误
+              </div>
+            </div>
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div style="text-align:right;">
+          <el-button size="small" @click="closeImportDialog">关闭</el-button>
+          <el-button 
+            type="primary" 
+            size="small" 
+            :loading="importing"
+            :disabled="!importFile"
+            @click="importUsers"
+          >
+            开始导入
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -207,6 +279,7 @@
 import { computed, onMounted, ref } from "vue";
 import axios from "axios";
 import { ElMessage } from "element-plus";
+import { ArrowDown } from "@element-plus/icons-vue";
 
 
 const users = ref<any[]>([]);
@@ -223,6 +296,13 @@ const resetForm = ref({ id: 0, password: "" });
 const currentDetail = ref<any | null>(null);
 const batchVisible = ref(false);
 const batchText = ref("");
+
+// 导入相关状态
+const importVisible = ref(false);
+const importFile = ref<File | null>(null);
+const importing = ref(false);
+const importResult = ref<any>(null);
+const uploadRef = ref<any>(null);
 
 
 async function load(resetPage = false) {
@@ -372,6 +452,110 @@ async function select(u: any) {
 onMounted(() => {
   load(true);
 });
+
+
+// 导出功能
+async function handleExportCommand(command: string) {
+  const params: any = {};
+  if (command === "filtered" && roleFilter.value) {
+    params.role = roleFilter.value;
+  }
+  
+  try {
+    const response = await axios.get("/api/admin/export/users", {
+      params,
+      responseType: "blob"
+    });
+    
+    // 创建下载链接
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "用户列表.xlsx");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+    
+    ElMessage.success("导出成功");
+  } catch (err) {
+    ElMessage.error("导出失败，请重试");
+  }
+}
+
+
+// 下载导入模板
+async function downloadTemplate() {
+  try {
+    const response = await axios.get("/api/admin/import/users/template", {
+      responseType: "blob"
+    });
+    
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "用户导入模板.xlsx");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    ElMessage.error("下载模板失败");
+  }
+}
+
+
+// 文件选择处理
+function handleFileChange(file: any) {
+  importFile.value = file.raw;
+  importResult.value = null;
+}
+
+
+function handleFileRemove() {
+  importFile.value = null;
+  importResult.value = null;
+}
+
+
+// 导入用户
+async function importUsers() {
+  if (!importFile.value) return;
+  
+  importing.value = true;
+  importResult.value = null;
+  
+  try {
+    const formData = new FormData();
+    formData.append("file", importFile.value);
+    
+    const response = await axios.post("/api/admin/import/users", formData, {
+      headers: { "Content-Type": "multipart/form-data" }
+    });
+    
+    importResult.value = response.data;
+    
+    if (response.data.success > 0) {
+      ElMessage.success(`成功导入 ${response.data.success} 个用户`);
+      await load(true);
+    }
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.message || "导入失败");
+  } finally {
+    importing.value = false;
+  }
+}
+
+
+// 关闭导入对话框
+function closeImportDialog() {
+  importVisible.value = false;
+  importFile.value = null;
+  importResult.value = null;
+  if (uploadRef.value) {
+    uploadRef.value.clearFiles();
+  }
+}
 </script>
 
 <style scoped>

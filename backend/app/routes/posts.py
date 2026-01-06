@@ -30,6 +30,46 @@ from ..services import push_notification
 bp = Blueprint("posts", __name__)
 
 
+def _notify_project_status_change(post, old_status, new_status):
+    """项目状态变更时通知相关学生"""
+    status_text = {
+        "recruiting": "招募中",
+        "in_progress": "进行中",
+        "completed": "已完成",
+        "closed": "已关闭"
+    }
+    
+    # 获取所有申请过该项目的学生（包括待处理和已确认的）
+    requests = CooperationRequest.query.filter_by(post_id=post.id).all()
+    student_ids = set(r.student_user_id for r in requests if r.student_user_id)
+    
+    # 获取收藏过该项目的学生
+    favorites = Reaction.query.filter_by(
+        target_type="teacher_post",
+        target_id=post.id,
+        reaction_type="favorite"
+    ).all()
+    for fav in favorites:
+        user = User.query.get(fav.user_id)
+        if user and user.role == Role.student.value:
+            student_ids.add(fav.user_id)
+    
+    if not student_ids:
+        return
+    
+    # 发送通知
+    title = f"项目状态更新：{post.title}"
+    summary = f"项目状态从「{status_text.get(old_status, old_status or '未设置')}」变更为「{status_text.get(new_status, new_status)}」"
+    
+    for student_id in student_ids:
+        push_notification(
+            user_id=student_id,
+            notif_type="project_update",
+            title=title,
+            payload={"summary": summary, "post_id": post.id}
+        )
+
+
 def _viewer_role():
     if not request.headers.get("Authorization"):
         return None
@@ -214,6 +254,7 @@ def list_teacher_posts():
             continue
         tags = json_loads(p.tags_json, [])
         techs = json_loads(p.tech_stack_json, [])
+        required_roles = json_loads(p.required_roles_json, []) if hasattr(p, 'required_roles_json') and p.required_roles_json else []
         if tag and tag not in tags:
             continue
         if tech and tech not in techs:
@@ -229,6 +270,7 @@ def list_teacher_posts():
                 "detailed_info": p.detailed_info,  # 新增：详细信息字段
                 "tech_stack": techs,
                 "tags": tags,
+                "required_roles": required_roles,  # 新增：招募角色标签
                 "recruit_count": p.recruit_count,
                 "confirmed_count": get_confirmed_count(p.id),  # 新增：已确认学生数量
                 "duration": p.duration,
@@ -252,6 +294,8 @@ def list_teacher_posts():
 @bp.post("/teacher-posts")
 @jwt_required()
 def create_teacher_post():
+    from .role_tags import validate_role_tags
+    
     user = User.query.get(int(get_jwt_identity()))
     if not user or user.role != Role.teacher.value:
         return jsonify({"message": "无权限"}), 403
@@ -269,6 +313,11 @@ def create_teacher_post():
     if len(detailed_info) > 10000:
         return jsonify({"message": "详细信息不能超过10000字符"}), 400
 
+    # 验证招募角色标签
+    is_valid, error_msg, required_roles = validate_role_tags(data.get("required_roles"))
+    if not is_valid:
+        return jsonify({"message": error_msg}), 400
+
     post = TeacherPost(
         teacher_user_id=user.id,
         post_type=post_type,
@@ -277,6 +326,7 @@ def create_teacher_post():
         detailed_info=detailed_info,  # 新增：详细信息字段
         tech_stack_json=json_dumps(ensure_list_str(data.get("tech_stack"))),
         tags_json=json_dumps(ensure_list_str(data.get("tags"))),
+        required_roles_json=json_dumps(required_roles),  # 新增：招募角色标签
         recruit_count=data.get("recruit_count"),
         duration=(data.get("duration") or None),
         outcome=(data.get("outcome") or None),
@@ -296,6 +346,8 @@ def create_teacher_post():
 @bp.put("/teacher-posts/<int:post_id>")
 @jwt_required()
 def update_teacher_post(post_id: int):
+    from .role_tags import validate_role_tags
+    
     user = User.query.get(int(get_jwt_identity()))
     if not user or user.role != Role.teacher.value:
         return jsonify({"message": "无权限"}), 403
@@ -317,11 +369,21 @@ def update_teacher_post(post_id: int):
             return jsonify({"message": "详细信息不能超过10000字符"}), 400
         post.detailed_info = detailed_info
 
+    # 记录旧状态用于通知
+    old_status = post.project_status
+
     # 更新项目状态
     if "project_status" in data:
         project_status = (data.get("project_status") or "").strip()
         if project_status in ("recruiting", "in_progress", "completed", "closed"):
             post.project_status = project_status
+
+    # 更新招募角色标签
+    if "required_roles" in data:
+        is_valid, error_msg, required_roles = validate_role_tags(data.get("required_roles"))
+        if not is_valid:
+            return jsonify({"message": error_msg}), 400
+        post.required_roles_json = json_dumps(required_roles)
 
     post.title = title
     post.content = content
@@ -346,6 +408,12 @@ def update_teacher_post(post_id: int):
     post.updated_at = now_utc()
     post.review_status = ReviewStatus.approved.value
     db.session.commit()
+
+    # 项目状态变更通知
+    new_status = post.project_status
+    if old_status != new_status and new_status:
+        _notify_project_status_change(post, old_status, new_status)
+
     return jsonify({"ok": True})
 
 
@@ -995,4 +1063,82 @@ def get_teacher_profile(teacher_id):
             "success_rate": success_rate
         },
         "recent_achievements": recent_achievements
+    })
+
+
+@bp.get("/students/<int:student_id>/summary")
+@jwt_required()
+def get_student_summary(student_id):
+    """
+    获取学生画像摘要信息（用于悬浮预览）
+    Requirements: 3.1, 3.2, 3.3, 3.4
+    """
+    user = User.query.get(int(get_jwt_identity()))
+    if not user or not user.is_active:
+        return jsonify({"message": "未登录"}), 401
+    
+    # 只有教师和管理员可以查看学生摘要
+    if user.role not in [Role.teacher.value, Role.admin.value]:
+        return jsonify({"message": "无权限"}), 403
+    
+    # 获取学生用户信息
+    student = User.query.filter_by(id=student_id, role=Role.student.value).first()
+    if not student:
+        return jsonify({"message": "学生不存在"}), 404
+    
+    # 获取学生画像
+    profile = StudentProfile.query.filter_by(user_id=student_id).first()
+    
+    # 解析技能、兴趣、经历
+    skills = json_loads(profile.skills_json, []) if profile else []
+    interests = json_loads(profile.interests_json, []) if profile else []
+    experiences = json_loads(profile.experiences_json or "[]", []) if profile else []
+    
+    # 计算技能评分
+    def skill_weight(level_text: str) -> float:
+        t = (level_text or "").strip()
+        if "精通" in t or "熟练" in t:
+            return 5.0
+        if "掌握" in t or "较熟练" in t:
+            return 4.0
+        if "了解" in t or "入门" in t:
+            return 2.5
+        return 3.0
+    
+    skill_points = 0.0
+    for s in skills:
+        if isinstance(s, dict):
+            skill_points += skill_weight(str(s.get("level") or ""))
+    skill_points = min(skill_points, 35.0)
+    
+    exp_points = min(len(experiences) * 7.0, 28.0)
+    weekly_hours = (profile.weekly_hours if profile else None) or 0
+    time_points = min(max(float(weekly_hours), 0.0), 20.0) / 20.0 * 10.0
+    
+    skill_score = int(min(100.0, round(20.0 + skill_points + exp_points + time_points)))
+    
+    # 获取最近经历（最多2个）
+    recent_experiences = []
+    for exp in experiences[:2]:
+        if isinstance(exp, dict):
+            recent_experiences.append({
+                "title": exp.get("title", ""),
+                "type": exp.get("type", "")
+            })
+    
+    # 获取简历文件ID
+    resume_file_id = profile.resume_file_id if profile else None
+    
+    return jsonify({
+        "id": student.id,
+        "display_name": student.display_name,
+        "grade": profile.grade if profile else None,
+        "major": profile.major if profile else None,
+        "skills": skills,
+        "skill_score": skill_score,
+        "weekly_hours": weekly_hours,
+        "interests": interests,
+        "experiences_count": len(experiences),
+        "recent_experiences": recent_experiences,
+        "resume_file_id": resume_file_id
     })

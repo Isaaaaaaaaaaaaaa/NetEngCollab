@@ -1,5 +1,24 @@
 <template>
   <div class="grouped-applications">
+    <!-- 筛选区域 -->
+    <div class="filter-bar" v-if="!loading && groups.length > 0">
+      <el-select
+        v-model="roleFilter"
+        placeholder="按角色筛选"
+        clearable
+        size="small"
+        style="width: 160px;"
+        @change="fetchGroupedApplications"
+      >
+        <el-option
+          v-for="role in availableRoles"
+          :key="role"
+          :label="role"
+          :value="role"
+        />
+      </el-select>
+    </div>
+    
     <div v-if="loading" class="loading-container">
       <el-icon class="is-loading"><Loading /></el-icon>
       <span>加载中...</span>
@@ -62,10 +81,38 @@
                     {{ getStatusText(app.final_status) }}
                   </el-tag>
                 </div>
-                <div v-if="app.student_role || app.custom_status" class="app-extra">
-                  <el-tag v-if="app.student_role" size="small" type="info">
-                    角色：{{ app.student_role }}
+                <!-- 申请角色标签 -->
+                <div v-if="app.applied_roles?.length" class="app-roles">
+                  <span class="roles-label">申请角色：</span>
+                  <el-tag
+                    v-for="role in app.applied_roles"
+                    :key="role"
+                    size="small"
+                    type="primary"
+                    style="margin-right: 4px;"
+                  >
+                    {{ role }}
                   </el-tag>
+                </div>
+                <!-- 建议角色标签（教师邀请时） -->
+                <div v-if="app.suggested_roles?.length" class="app-roles">
+                  <span class="roles-label">建议角色：</span>
+                  <el-tag
+                    v-for="role in app.suggested_roles"
+                    :key="role"
+                    size="small"
+                    type="success"
+                    style="margin-right: 4px;"
+                  >
+                    {{ role }}
+                  </el-tag>
+                </div>
+                <div v-if="app.applied_roles?.length || app.custom_status" class="app-extra">
+                  <template v-if="app.applied_roles?.length">
+                    <el-tag v-for="role in app.applied_roles" :key="role" size="small" type="info" style="margin-right: 4px;">
+                      {{ role }}
+                    </el-tag>
+                  </template>
                   <el-tag v-if="app.custom_status" size="small" type="success">
                     状态：{{ app.custom_status }}
                   </el-tag>
@@ -98,8 +145,9 @@ interface Application {
   final_status: string
   teacher_status: string
   student_status: string
-  student_role?: string
+  applied_roles?: string[]
   custom_status?: string
+  suggested_roles?: string[]
 }
 
 interface GroupedApplication {
@@ -107,6 +155,7 @@ interface GroupedApplication {
     id: number
     title: string
     project_status: string
+    required_roles?: string[]
   }
   applications: Application[]
   pending_count: number
@@ -123,17 +172,34 @@ const loading = ref(false)
 const error = ref('')
 const groups = ref<GroupedApplication[]>([])
 const activeNames = ref<number[]>([])
+const roleFilter = ref('')
+const availableRoles = ref<string[]>([])
 
 onMounted(() => {
+  loadAvailableRoles()
   fetchGroupedApplications()
 })
+
+// 加载可用的角色标签列表
+const loadAvailableRoles = async () => {
+  try {
+    const response = await axios.get('/api/role-tags')
+    availableRoles.value = response.data.all_tags || []
+  } catch (err) {
+    console.error('加载角色标签失败:', err)
+  }
+}
 
 const fetchGroupedApplications = async () => {
   loading.value = true
   error.value = ''
 
   try {
-    const response = await axios.get('/api/cooperation/requests/grouped-by-project')
+    const params: any = {}
+    if (roleFilter.value) {
+      params.role = roleFilter.value
+    }
+    const response = await axios.get('/api/cooperation/requests/grouped-by-project', { params })
     groups.value = response.data.groups || []
     
     // 默认展开第一个有待处理申请的项目
@@ -224,6 +290,12 @@ defineExpose({
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+}
+
+.filter-bar {
+  padding: 8px 0 12px 0;
+  border-bottom: 1px solid #f0f0f0;
+  margin-bottom: 8px;
 }
 
 .loading-container {
@@ -346,6 +418,20 @@ defineExpose({
   display: flex;
   gap: 12px;
   margin-top: 8px;
+}
+
+.app-roles {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.roles-label {
+  font-size: 12px;
+  color: #909399;
+  margin-right: 4px;
 }
 
 .role-tag,

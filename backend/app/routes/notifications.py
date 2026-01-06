@@ -37,6 +37,7 @@ def list_notifications():
                     "notif_type": n.notif_type,
                     "title": n.title,
                     "payload": json.loads(n.payload_json or "{}"),
+                    "payload_json": n.payload_json or "{}",
                     "is_read": n.is_read,
                     "created_at": n.created_at.isoformat(),
                 }
@@ -62,3 +63,28 @@ def mark_read(notif_id: int):
     n.is_read = True
     db.session.commit()
     return jsonify({"ok": True})
+
+
+@bp.post("/notifications/read-all")
+@jwt_required()
+def mark_all_read():
+    """标记所有通知为已读"""
+    user = User.query.get(int(get_jwt_identity()))
+    if not user or not user.is_active:
+        return jsonify({"message": "未登录"}), 401
+    
+    Notification.query.filter_by(user_id=user.id, is_read=False).update({"is_read": True})
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@bp.get("/notifications/unread-count")
+@jwt_required()
+def get_unread_count():
+    """获取未读通知数量"""
+    user = User.query.get(int(get_jwt_identity()))
+    if not user or not user.is_active:
+        return jsonify({"message": "未登录"}), 401
+    
+    count = Notification.query.filter_by(user_id=user.id, is_read=False).count()
+    return jsonify({"count": count})

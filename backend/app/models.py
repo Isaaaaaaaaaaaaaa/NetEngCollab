@@ -102,6 +102,7 @@ class TeacherPost(db.Model):
     detailed_info = db.Column(db.Text, nullable=True)  # 新增：项目详细信息字段
     tech_stack_json = db.Column(db.Text, nullable=False, default="[]")
     tags_json = db.Column(db.Text, nullable=False, default="[]")
+    required_roles_json = db.Column(db.Text, nullable=False, default="[]")  # 新增：招募角色标签
     recruit_count = db.Column(db.Integer, nullable=True)
     duration = db.Column(db.String(64), nullable=True)
     outcome = db.Column(db.String(128), nullable=True)
@@ -155,8 +156,10 @@ class CooperationRequest(db.Model):
     teacher_status = db.Column(db.String(16), default=CooperationStatus.pending.value, nullable=False)
     student_status = db.Column(db.String(16), default=CooperationStatus.pending.value, nullable=False)
     final_status = db.Column(db.String(16), default=CooperationStatus.pending.value, nullable=False, index=True)
-    student_role = db.Column(db.String(64), nullable=True)  # 新增：学生在项目中的角色
-    custom_status = db.Column(db.String(64), nullable=True)  # 新增：自定义状态标签
+    student_role = db.Column(db.String(64), nullable=True)  # 学生在项目中的角色
+    custom_status = db.Column(db.String(64), nullable=True)  # 自定义状态标签
+    applied_roles_json = db.Column(db.Text, nullable=False, default="[]")  # 新增：学生申请时指定的角色标签
+    suggested_roles_json = db.Column(db.Text, nullable=False, default="[]")  # 新增：教师邀请时建议的角色标签
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 

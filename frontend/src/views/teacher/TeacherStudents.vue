@@ -119,18 +119,7 @@
           <el-col :xs="24" :lg="10">
         <el-card class="app-card ts-card" shadow="never">
           <template #header>
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <div class="page-subtitle">学生详情</div>
-              <el-button
-                v-if="selectedStudent && currentRequest && currentRequest.final_status === 'confirmed'"
-                size="small"
-                type="primary"
-                text
-                @click="openEditStudentModal"
-              >
-                编辑信息
-              </el-button>
-            </div>
+            <div class="page-subtitle">学生详情</div>
           </template>
           <div v-if="!selectedStudent" style="font-size:12px; color:var(--app-muted);">
             在左侧表格中选择一名学生查看详细画像。
@@ -266,17 +255,41 @@
       </el-col>
     </el-row>
     
-    <!-- 学生信息编辑弹窗 -->
-    <StudentEditModal
-      v-model:visible="editModalVisible"
-      :cooperation-request-id="currentRequest?.id"
-      :student-info="{
-        name: selectedStudent?.user?.display_name || '',
-        role: currentRequest?.student_role,
-        status: currentRequest?.custom_status
-      }"
-      @updated="handleStudentInfoUpdated"
-    />
+    <!-- 邀请弹窗 -->
+    <el-dialog v-model="inviteDialogVisible" title="发送合作邀请" width="480px">
+      <div v-if="selectedStudent" style="margin-bottom: 16px;">
+        <div style="font-size: 14px; font-weight: 500; margin-bottom: 8px;">
+          邀请 {{ selectedStudent.user.display_name }} 加入项目
+        </div>
+        <div v-if="selectedProjectInfo?.required_roles?.length" style="margin-bottom: 12px;">
+          <div style="font-size: 12px; color: var(--app-muted); margin-bottom: 4px;">项目招募角色：</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+            <el-tag v-for="role in selectedProjectInfo.required_roles" :key="role" size="small" type="info">
+              {{ role }}
+            </el-tag>
+          </div>
+        </div>
+      </div>
+      
+      <el-form label-position="top" size="small">
+        <el-form-item label="建议角色（可选）">
+          <RoleTagSelector
+            v-model="inviteForm.suggested_roles"
+            hint="选择您建议该学生在项目中承担的角色"
+            add-button-text="添加角色"
+            :suggested-tags="selectedProjectInfo?.required_roles || []"
+            :max-tags="3"
+          />
+        </el-form-item>
+      </el-form>
+      
+      <template #footer>
+        <div style="text-align: right;">
+          <el-button size="small" @click="inviteDialogVisible = false">取消</el-button>
+          <el-button type="primary" size="small" @click="submitInvite">发送邀请</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -285,7 +298,7 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 import axios from "axios";
 import { ElMessage } from "element-plus";
 import { Folder } from '@element-plus/icons-vue';
-import StudentEditModal from "../../components/StudentEditModal.vue";
+import RoleTagSelector from "../../components/RoleTagSelector.vue";
 
 
 const students = ref<any[]>([]);
@@ -302,8 +315,17 @@ const recommendScores = reactive<Record<number, number>>({});
 const myProjects = ref<any[]>([]);
 const selectedProjectId = ref<number | null>(null);
 
-// 学生编辑弹窗相关
-const editModalVisible = ref(false);
+// 邀请弹窗相关
+const inviteDialogVisible = ref(false);
+const inviteForm = reactive({
+  suggested_roles: [] as string[]
+});
+
+// 获取选中项目的信息
+const selectedProjectInfo = computed(() => {
+  if (!selectedPostId.value) return null;
+  return myPosts.value.find(p => p.id === selectedPostId.value);
+});
 
 const canInvite = computed(() => {
   if (!selectedPostId.value) return false;
@@ -419,32 +441,33 @@ function handleProjectChange() {
   load();
 }
 
-// 打开学生信息编辑弹窗
-function openEditStudentModal() {
-  if (!currentRequest.value) {
-    ElMessage.warning('请先确认合作关系');
-    return;
-  }
-  editModalVisible.value = true;
-}
-
-// 处理学生信息更新
-async function handleStudentInfoUpdated() {
-  ElMessage.success('学生信息已更新');
-  // 重新加载当前请求信息
-  await loadCurrentRequest();
-}
-
 
 async function invite(s: any) {
   if (!selectedPostId.value) return;
   if (!canInvite.value) return;
-  await axios.post("/api/cooperation/request", {
-    post_id: selectedPostId.value,
-    student_user_id: s.user.id
-  });
-  await loadCurrentRequest();
-  ElMessage.success("已发送合作邀请，等待学生确认");
+  
+  // 打开邀请弹窗
+  inviteForm.suggested_roles = [];
+  inviteDialogVisible.value = true;
+}
+
+
+// 提交邀请
+async function submitInvite() {
+  if (!selectedStudent.value || !selectedPostId.value) return;
+  
+  try {
+    await axios.post("/api/cooperation/request", {
+      post_id: selectedPostId.value,
+      student_user_id: selectedStudent.value.user.id,
+      suggested_roles: inviteForm.suggested_roles
+    });
+    await loadCurrentRequest();
+    inviteDialogVisible.value = false;
+    ElMessage.success("已发送合作邀请，等待学生确认");
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.message || "邀请失败，请重试");
+  }
 }
 
 

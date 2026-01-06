@@ -210,6 +210,53 @@ def _ensure_schema():
         ensure_column("student_role", "VARCHAR(64)", "VARCHAR(64)")
         ensure_column("custom_status", "VARCHAR(64)", "VARCHAR(64)")
 
+    def ensure_teacher_posts_required_roles():
+        """添加 teacher_posts 表的 required_roles_json 字段"""
+        table = "teacher_posts"
+
+        def ensure_column(col: str, sqlite_type: str, mysql_type: str, default_value: str = None):
+            if dialect == "sqlite":
+                if has_column_sqlite(table, col):
+                    return
+                if default_value is not None:
+                    _exec(f"ALTER TABLE {table} ADD COLUMN {col} {sqlite_type} DEFAULT {default_value}")
+                else:
+                    _exec(f"ALTER TABLE {table} ADD COLUMN {col} {sqlite_type}")
+                return
+
+            if dialect in {"mysql", "mariadb"}:
+                if has_column_mysql(table, col):
+                    return
+                # MySQL TEXT类型不能有默认值，需要使用NULL
+                _exec(f"ALTER TABLE {table} ADD COLUMN {col} {mysql_type} NULL")
+                return
+
+        ensure_column("required_roles_json", "TEXT", "TEXT")
+
+    def ensure_cooperation_requests_role_tags():
+        """添加 cooperation_requests 表的 applied_roles_json 和 suggested_roles_json 字段"""
+        table = "cooperation_requests"
+
+        def ensure_column(col: str, sqlite_type: str, mysql_type: str, default_value: str = None):
+            if dialect == "sqlite":
+                if has_column_sqlite(table, col):
+                    return
+                if default_value is not None:
+                    _exec(f"ALTER TABLE {table} ADD COLUMN {col} {sqlite_type} DEFAULT {default_value}")
+                else:
+                    _exec(f"ALTER TABLE {table} ADD COLUMN {col} {sqlite_type}")
+                return
+
+            if dialect in {"mysql", "mariadb"}:
+                if has_column_mysql(table, col):
+                    return
+                # MySQL TEXT类型不能有默认值，需要使用NULL
+                _exec(f"ALTER TABLE {table} ADD COLUMN {col} {mysql_type} NULL")
+                return
+
+        ensure_column("applied_roles_json", "TEXT", "TEXT")
+        ensure_column("suggested_roles_json", "TEXT", "TEXT")
+
     try:
         ensure_comments_parent_comment_id()
     except Exception:
@@ -247,5 +294,15 @@ def _ensure_schema():
 
     try:
         ensure_cooperation_requests_student_info()
+    except Exception:
+        pass
+
+    try:
+        ensure_teacher_posts_required_roles()
+    except Exception:
+        pass
+
+    try:
+        ensure_cooperation_requests_role_tags()
     except Exception:
         pass

@@ -5,6 +5,10 @@
         <h2 class="page-title">项目概览</h2>
         <p class="page-subtitle">查看所有教师项目及其学生选择情况</p>
       </div>
+      <el-button size="small" @click="exportProjects">
+        <el-icon style="margin-right: 4px;"><Download /></el-icon>
+        导出Excel
+      </el-button>
     </div>
 
     <el-row :gutter="16" class="ac-main" style="margin-top:6px;">
@@ -160,7 +164,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import axios from "axios";
-import { ElMessageBox } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { Download } from "@element-plus/icons-vue";
 
 
 const projects = ref<any[]>([]);
@@ -311,6 +316,35 @@ async function resetSelection(row: any) {
 onMounted(() => {
   load();
 });
+
+
+// 导出项目数据
+async function exportProjects() {
+  const params: any = {};
+  if (typeFilter.value) {
+    params.post_type = typeFilter.value;
+  }
+  
+  try {
+    const response = await axios.get("/api/admin/export/projects", {
+      params,
+      responseType: "blob"
+    });
+    
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", "项目列表.xlsx");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+    
+    ElMessage.success("导出成功");
+  } catch (err) {
+    ElMessage.error("导出失败，请重试");
+  }
+}
 </script>
 
 <style scoped>

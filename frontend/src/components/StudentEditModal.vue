@@ -15,27 +15,12 @@
         <el-input :value="studentInfo.name" disabled />
       </el-form-item>
 
-      <el-form-item label="项目角色" prop="student_role">
-        <el-select 
-          v-model="formData.student_role" 
-          placeholder="选择或输入角色" 
-          filterable 
-          allow-create 
-          clearable 
-          style="width: 100%;"
-        >
-          <el-option label="前端开发" value="前端开发" />
-          <el-option label="后端开发" value="后端开发" />
-          <el-option label="算法研究" value="算法研究" />
-          <el-option label="数据分析" value="数据分析" />
-          <el-option label="测试" value="测试" />
-          <el-option label="文档撰写" value="文档撰写" />
-          <el-option label="UI设计" value="UI设计" />
-          <el-option label="项目管理" value="项目管理" />
-        </el-select>
-        <template #extra>
-          <span style="font-size: 12px; color: #909399;">为学生在项目中分配具体角色</span>
-        </template>
+      <el-form-item label="项目角色">
+        <RoleTagSelector
+          v-model="formData.applied_roles"
+          :suggested-tags="suggestedTags"
+          hint="为学生在项目中分配具体角色"
+        />
       </el-form-item>
 
       <el-form-item label="自定义状态" prop="custom_status">
@@ -75,15 +60,17 @@
 import { ref, watch, reactive } from 'vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import axios from 'axios'
+import RoleTagSelector from './RoleTagSelector.vue'
 
 interface Props {
   visible: boolean
   cooperationRequestId: number | null
   studentInfo: {
     name: string
-    role?: string
+    roles?: string[]
     status?: string
   }
+  suggestedTags?: string[]
 }
 
 interface Emits {
@@ -91,7 +78,9 @@ interface Emits {
   (e: 'updated'): void
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  suggestedTags: () => []
+})
 const emit = defineEmits<Emits>()
 
 const dialogVisible = ref(false)
@@ -99,14 +88,11 @@ const formRef = ref<FormInstance>()
 const saving = ref(false)
 
 const formData = reactive({
-  student_role: '',
+  applied_roles: [] as string[],
   custom_status: ''
 })
 
 const rules: FormRules = {
-  student_role: [
-    { max: 64, message: '角色名称不能超过64个字符', trigger: 'blur' }
-  ],
   custom_status: [
     { max: 64, message: '状态不能超过64个字符', trigger: 'blur' }
   ]
@@ -116,7 +102,7 @@ watch(() => props.visible, (newVal) => {
   dialogVisible.value = newVal
   if (newVal) {
     // 初始化表单数据
-    formData.student_role = props.studentInfo.role || ''
+    formData.applied_roles = props.studentInfo.roles || []
     formData.custom_status = props.studentInfo.status || ''
   }
 })
@@ -152,7 +138,7 @@ const handleSave = async () => {
     await axios.put(
       `/api/cooperation/requests/${props.cooperationRequestId}/student-info`,
       {
-        student_role: formData.student_role || null,
+        applied_roles: formData.applied_roles,
         custom_status: formData.custom_status || null
       }
     )
