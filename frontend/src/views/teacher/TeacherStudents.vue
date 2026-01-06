@@ -3,9 +3,31 @@
     <div class="page-header">
       <div>
         <h2 class="page-title">学生画像与匹配</h2>
-        <p class="page-subtitle">按专业、技能和关键词筛选学生，快速找到合适的合作伙伴</p>
+        <p class="page-subtitle">
+          按专业、技能和关键词筛选学生，快速找到合适的合作伙伴
+          <span v-if="selectedProjectId" style="color: #409eff; margin-left: 8px;">
+            · 已选择项目，学生按匹配度排序
+          </span>
+        </p>
       </div>
       <el-space :size="8">
+        <el-select v-model="selectedProjectId" size="small" clearable placeholder="选择项目计算匹配度" style="width: 220px;" @change="handleProjectChange">
+          <template #prefix>
+            <el-icon><Folder /></el-icon>
+          </template>
+          <el-option label="全部学生（通用推荐）" :value="null" />
+          <el-option
+            v-for="project in myProjects"
+            :key="project.id"
+            :label="project.title"
+            :value="project.id"
+          >
+            <span>{{ project.title }}</span>
+            <span style="float: right; color: #8492a6; font-size: 12px; margin-left: 8px;">
+              {{ project.recruit_count ? `招${project.recruit_count}人` : '' }}
+            </span>
+          </el-option>
+        </el-select>
         <el-select v-model="filters.grade" size="small" clearable placeholder="年级" style="width: 120px;">
           <el-option label="大一" value="大一" />
           <el-option label="大二" value="大二" />
@@ -97,7 +119,18 @@
           <el-col :xs="24" :lg="10">
         <el-card class="app-card ts-card" shadow="never">
           <template #header>
-            <div class="page-subtitle">学生详情</div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <div class="page-subtitle">学生详情</div>
+              <el-button
+                v-if="selectedStudent && currentRequest && currentRequest.final_status === 'confirmed'"
+                size="small"
+                type="primary"
+                text
+                @click="openEditStudentModal"
+              >
+                编辑信息
+              </el-button>
+            </div>
           </template>
           <div v-if="!selectedStudent" style="font-size:12px; color:var(--app-muted);">
             在左侧表格中选择一名学生查看详细画像。
@@ -232,6 +265,18 @@
         </el-card>
       </el-col>
     </el-row>
+    
+    <!-- 学生信息编辑弹窗 -->
+    <StudentEditModal
+      v-model:visible="editModalVisible"
+      :cooperation-request-id="currentRequest?.id"
+      :student-info="{
+        name: selectedStudent?.user?.display_name || '',
+        role: currentRequest?.student_role,
+        status: currentRequest?.custom_status
+      }"
+      @updated="handleStudentInfoUpdated"
+    />
   </div>
 </template>
 
@@ -239,6 +284,8 @@
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import axios from "axios";
 import { ElMessage } from "element-plus";
+import { Folder } from '@element-plus/icons-vue';
+import StudentEditModal from "../../components/StudentEditModal.vue";
 
 
 const students = ref<any[]>([]);
@@ -251,6 +298,13 @@ const selectedPostId = ref<number | null>(null);
 const currentRequest = ref<any | null>(null);
 const recommendScores = reactive<Record<number, number>>({});
 
+// 项目选择器相关
+const myProjects = ref<any[]>([]);
+const selectedProjectId = ref<number | null>(null);
+
+// 学生编辑弹窗相关
+const editModalVisible = ref(false);
+
 const canInvite = computed(() => {
   if (!selectedPostId.value) return false;
   return currentRequest.value == null;
@@ -259,30 +313,81 @@ const canInvite = computed(() => {
 
 async function load() {
   page.value = 1;
-  const resp = await axios.get("/api/students", {
-    params: { keyword: filters.keyword || undefined, grade: filters.grade || undefined }
-  });
+  const params: any = {
+    keyword: filters.keyword || undefined,
+    grade: filters.grade || undefined
+  };
+  
+  // 不使用project_id筛选，而是获取所有学生
+  const resp = await axios.get("/api/students", { params });
   students.value = resp.data.items;
+  
+  // 如果选择了项目，根据项目计算匹配度并排序
+  if (selectedProjectId.value) {
+    await calculateProjectMatchScores(selectedProjectId.value);
+    // 按匹配度降序排序
+    students.value.sort((a, b) => {
+      const scoreA = recommendScores[a.user.id] || 0;
+      const scoreB = recommendScores[b.user.id] || 0;
+      return scoreB - scoreA;
+    });
+  }
+  
   if (!selectedStudent.value && students.value.length) {
     selectedStudent.value = students.value[0];
   }
   const meResp = await axios.get("/api/auth/me");
   const postsResp = await axios.get("/api/teacher-posts");
   myPosts.value = (postsResp.data.items || []).filter((x: any) => x.teacher && x.teacher.id === meResp.data.id);
+  
+  // 加载教师的项目列表用于选择器
+  myProjects.value = myPosts.value;
   if (!selectedPostId.value && myPosts.value.length) {
     selectedPostId.value = myPosts.value[0].id;
   }
   await loadCurrentRequest();
 
-  const matchResp = await axios.get("/api/match/top", { params: { limit: 50 } });
-  Object.keys(recommendScores).forEach(k => delete recommendScores[Number(k)]);
-  if (matchResp.data.kind === "students") {
-    (matchResp.data.items || []).forEach((r: any) => {
-      if (r.user_id) {
-        recommendScores[r.user_id] = r.score || 0;
-      }
-    });
+  // 如果没有选择项目，使用通用推荐
+  if (!selectedProjectId.value) {
+    const matchResp = await axios.get("/api/match/top", { params: { limit: 50 } });
+    Object.keys(recommendScores).forEach(k => delete recommendScores[Number(k)]);
+    if (matchResp.data.kind === "students") {
+      (matchResp.data.items || []).forEach((r: any) => {
+        if (r.user_id) {
+          recommendScores[r.user_id] = r.score || 0;
+        }
+      });
+    }
   }
+}
+
+// 根据项目计算学生匹配度
+async function calculateProjectMatchScores(projectId: number) {
+  // 清空现有分数
+  Object.keys(recommendScores).forEach(k => delete recommendScores[Number(k)]);
+  
+  // 获取项目信息
+  const project = myProjects.value.find(p => p.id === projectId);
+  if (!project) return;
+  
+  // 提取项目的技术栈和标签
+  const projectTags = [...(project.tech_stack || []), ...(project.tags || [])];
+  
+  // 为每个学生计算匹配度
+  students.value.forEach(student => {
+    const studentSkills = (student.skills || []).map((s: any) => s.name);
+    const studentInterests = student.interests || [];
+    const studentTags = [...studentSkills, ...studentInterests];
+    
+    // 计算交集
+    const intersection = projectTags.filter(tag => 
+      studentTags.some(st => st.toLowerCase().includes(tag.toLowerCase()) || tag.toLowerCase().includes(st.toLowerCase()))
+    );
+    
+    // 计算匹配度（0-1之间）
+    const score = projectTags.length > 0 ? intersection.length / projectTags.length : 0;
+    recommendScores[student.user.id] = score;
+  });
 }
 
 
@@ -307,6 +412,27 @@ const pagedStudents = computed(() => {
 
 function handlePageChange(p: number) {
   page.value = p;
+}
+
+// 处理项目选择变化
+function handleProjectChange() {
+  load();
+}
+
+// 打开学生信息编辑弹窗
+function openEditStudentModal() {
+  if (!currentRequest.value) {
+    ElMessage.warning('请先确认合作关系');
+    return;
+  }
+  editModalVisible.value = true;
+}
+
+// 处理学生信息更新
+async function handleStudentInfoUpdated() {
+  ElMessage.success('学生信息已更新');
+  // 重新加载当前请求信息
+  await loadCurrentRequest();
 }
 
 

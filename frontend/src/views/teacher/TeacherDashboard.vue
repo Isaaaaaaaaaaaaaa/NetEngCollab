@@ -112,38 +112,10 @@
       <el-col :xs="24" :lg="8">
         <el-card class="app-card dash-card dash-card-requests" shadow="never">
           <template #header>
-            <div class="page-subtitle">合作请求</div>
+            <div class="page-subtitle">按项目聚合的申请</div>
           </template>
 
-          <el-empty v-if="!requests.length" description="暂无新的合作请求" />
-          <el-scrollbar v-else class="dash-scroll">
-            <ul style="list-style: none; padding: 0; margin: 0; padding-right: 6px;">
-              <li
-                v-for="r in pagedRequests"
-                :key="r.id"
-                style="display: flex; align-items: center; justify-content: space-between; font-size: 12px; padding: 6px 0; gap: 8px;"
-              >
-                <div class="truncate" style="max-width: 240px;">
-                  {{ r.student?.display_name || "学生" }} 申请加入 {{ r.post?.title || "项目" }}
-                </div>
-                <div class="btns">
-                  <el-button type="primary" size="small" text @click="accept(r)">接受</el-button>
-                  <el-button size="small" text @click="reject(r)">拒绝</el-button>
-                </div>
-              </li>
-            </ul>
-          </el-scrollbar>
-
-          <div v-if="requests.length > requestsPageSize" style="text-align:right; margin-top: 8px; flex: 0 0 auto;">
-            <el-pagination
-              background
-              layout="prev, pager, next"
-              :current-page="requestsPage"
-              :page-size="requestsPageSize"
-              :total="requests.length"
-              @current-change="handleRequestsPageChange"
-            />
-          </div>
+          <GroupedApplicationsList @view-application="handleViewApplication" />
         </el-card>
       </el-col>
     </el-row>
@@ -153,6 +125,11 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import axios from "axios";
+import { ElMessage } from "element-plus";
+import { useRouter } from "vue-router";
+import GroupedApplicationsList from "../../components/GroupedApplicationsList.vue";
+
+const router = useRouter();
 
 
 const posts = ref<any[]>([]);
@@ -266,6 +243,15 @@ async function reject(r: any) {
   await loadRequests();
 }
 
+// 处理查看申请详情
+function handleViewApplication(applicationId: number) {
+  // 导航到项目管理页面
+  router.push({ 
+    name: 'teacher-posts',
+    query: { request_id: applicationId }
+  });
+}
+
 
 onMounted(() => {
   loadPosts();
@@ -298,6 +284,15 @@ onMounted(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.dash-card-requests :deep(.el-card__body) {
+  padding-bottom: 8px;
+}
+
+.dash-card-requests :deep(.grouped-applications) {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .dash-scroll {

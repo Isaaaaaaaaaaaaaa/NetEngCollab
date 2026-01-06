@@ -99,6 +99,7 @@ class TeacherPost(db.Model):
     post_type = db.Column(db.String(32), nullable=False, index=True)
     title = db.Column(db.String(128), nullable=False)
     content = db.Column(db.Text, nullable=False)
+    detailed_info = db.Column(db.Text, nullable=True)  # 新增：项目详细信息字段
     tech_stack_json = db.Column(db.Text, nullable=False, default="[]")
     tags_json = db.Column(db.Text, nullable=False, default="[]")
     recruit_count = db.Column(db.Integer, nullable=True)
@@ -109,6 +110,7 @@ class TeacherPost(db.Model):
     attachment_file_id = db.Column(db.Integer, db.ForeignKey("files.id"), nullable=True)
     visibility = db.Column(db.String(16), default=Visibility.public.value, nullable=False)
     review_status = db.Column(db.String(16), default=ReviewStatus.pending.value, nullable=False, index=True)
+    project_status = db.Column(db.String(32), default="recruiting", nullable=False, index=True)  # 新增：项目状态
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
@@ -153,6 +155,8 @@ class CooperationRequest(db.Model):
     teacher_status = db.Column(db.String(16), default=CooperationStatus.pending.value, nullable=False)
     student_status = db.Column(db.String(16), default=CooperationStatus.pending.value, nullable=False)
     final_status = db.Column(db.String(16), default=CooperationStatus.pending.value, nullable=False, index=True)
+    student_role = db.Column(db.String(64), nullable=True)  # 新增：学生在项目中的角色
+    custom_status = db.Column(db.String(64), nullable=True)  # 新增：自定义状态标签
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 

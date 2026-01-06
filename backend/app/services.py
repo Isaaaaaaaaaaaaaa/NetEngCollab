@@ -90,3 +90,89 @@ def push_notification(user_id: int, notif_type: str, title: str, payload: Dict):
     db.session.add(n)
     db.session.commit()
     return n
+
+
+
+def check_and_start_project(post_id: int):
+    """
+    检查项目是否达到招募人数，如果达到则自动启动项目
+    - 更新项目状态为 "in_progress"
+    - 创建默认里程碑（注意：里程碑需要cooperation_project_id）
+    - 发送通知给教师和所有已确认的学生
+    """
+    from datetime import timedelta
+    
+    # 获取项目
+    post = TeacherPost.query.get(post_id)
+    if not post:
+        return False
+    
+    # 如果项目已经不是招募中状态，不处理
+    if post.project_status != "recruiting":
+        return False
+    
+    # 如果没有设置招募人数，不自动启动
+    if not post.recruit_count or post.recruit_count <= 0:
+        return False
+    
+    # 统计已确认的学生数量
+    confirmed_count = CooperationRequest.query.filter_by(
+        post_id=post_id,
+        final_status=CooperationStatus.confirmed.value
+    ).count()
+    
+    # 如果人数未达到要求，不启动
+    if confirmed_count < post.recruit_count:
+        return False
+    
+    # 更新项目状态为进行中
+    post.project_status = "in_progress"
+    post.updated_at = now_utc()
+    
+    # 注意：里程碑功能需要cooperation_project，这里先跳过里程碑创建
+    # 因为Milestone模型使用的是project_id（指向cooperation_projects表）
+    # 而不是post_id（指向teacher_posts表）
+    # 如果需要里程碑功能，需要先创建或找到对应的cooperation_project
+    
+    # 发送通知给教师
+    try:
+        teacher = User.query.get(post.teacher_user_id)
+        if teacher:
+            push_notification(
+                user_id=teacher.id,
+                notif_type="project_started",
+                title="项目已自动启动",
+                payload={
+                    "post_id": post_id,
+                    "post_title": post.title,
+                    "summary": f"项目《{post.title}》已达到招募人数（{confirmed_count}/{post.recruit_count}），自动进入进行中状态"
+                }
+            )
+    except Exception as e:
+        print(f"发送教师通知失败: {e}")
+    
+    # 发送通知给所有已确认的学生
+    try:
+        confirmed_requests = CooperationRequest.query.filter_by(
+            post_id=post_id,
+            final_status=CooperationStatus.confirmed.value
+        ).all()
+        
+        for req in confirmed_requests:
+            student = User.query.get(req.student_user_id)
+            if student:
+                push_notification(
+                    user_id=student.id,
+                    notif_type="project_started",
+                    title="项目已正式启动",
+                    payload={
+                        "post_id": post_id,
+                        "post_title": post.title,
+                        "summary": f"您参与的项目《{post.title}》已正式启动，请查看项目详情"
+                    }
+                )
+    except Exception as e:
+        print(f"发送学生通知失败: {e}")
+    
+    db.session.commit()
+    return True

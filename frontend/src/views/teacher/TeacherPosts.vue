@@ -12,6 +12,13 @@
           <el-option label="大创项目" value="innovation" />
           <el-option label="学科竞赛" value="competition" />
         </el-select>
+        <el-select v-model="filters.project_status" size="small" style="width: 140px;">
+          <el-option label="全部状态" value="" />
+          <el-option label="招募中" value="recruiting" />
+          <el-option label="进行中" value="in_progress" />
+          <el-option label="已完成" value="completed" />
+          <el-option label="已关闭" value="closed" />
+        </el-select>
         <el-button size="small" @click="load">筛选</el-button>
         <el-button size="small" type="primary" @click="createVisible = true">发布新项目</el-button>
       </el-space>
@@ -37,9 +44,14 @@
               >
                 <div style="display:flex; align-items:center; justify-content:space-between; gap:6px;">
                   <span class="truncate" style="max-width:160px; font-weight:500;">{{ p.title }}</span>
-                  <span class="pill" :class="p.post_type === 'competition' ? 'badge-amber' : 'badge-blue'">
-                    {{ typeLabel(p.post_type) }}
-                  </span>
+                  <div style="display: flex; gap: 4px;">
+                    <span class="pill" :class="p.post_type === 'competition' ? 'badge-amber' : 'badge-blue'">
+                      {{ typeLabel(p.post_type) }}
+                    </span>
+                    <span class="pill" :class="projectStatusClass(p.project_status)" style="font-size: 10px;">
+                      {{ projectStatusLabel(p.project_status) }}
+                    </span>
+                  </div>
                 </div>
                 <div style="font-size:11px; color:var(--app-muted);">
                   已选择 {{ requestSummary[p.id]?.count || 0 }} 人
@@ -72,83 +84,131 @@
           </div>
 
           <div v-else class="detail-body">
-            <div class="detail-top">
-              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-                <div style="font-size:15px; font-weight:600;" class="truncate">{{ selectedPost.title }}</div>
-                <el-button size="small" type="primary" text @click="openEdit(selectedPost)">编辑</el-button>
-              </div>
-              <div>
-                类型：
-                <span class="pill" :class="selectedPost.post_type === 'competition' ? 'badge-amber' : 'badge-blue'">
-                  {{ typeLabel(selectedPost.post_type) }}
-                </span>
-              </div>
-              <div class="detail-line">简介：{{ selectedPost.content }}</div>
-              <div>
-                技术栈：
-                <span v-if="!selectedPost.tech_stack?.length" style="color:var(--app-muted);">未设置</span>
-              </div>
-              <div v-if="selectedPost.tech_stack?.length" style="display:flex; flex-wrap:wrap; gap:4px;">
-                <span v-for="t in selectedPost.tech_stack" :key="t" class="tag">{{ t }}</span>
-                <span v-for="t in selectedPost.tags" :key="t" class="tag">{{ t }}</span>
-              </div>
-              <div>招募人数：{{ selectedPost.recruit_count || '未设置' }}</div>
-              <div>项目周期：{{ selectedPost.duration || '未设置' }}</div>
-              <div>预期成果与要求：{{ selectedPost.outcome || '未填写' }}</div>
-              <div>联系方式：{{ selectedPost.contact || '未填写' }}</div>
-              <div>
-                报名截止时间：
-                {{ selectedPost.deadline ? selectedPost.deadline.slice(0, 10) : '未设置' }}
-              </div>
-            </div>
-
-            <el-divider style="margin: 12px 0;" />
-
-            <div class="students-wrap">
-              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-                <div class="page-subtitle">选择该项目的学生</div>
-                <div style="font-size: 12px; color: var(--app-muted);">共 {{ selectedStudents.length }} 条</div>
-              </div>
-              <el-empty v-if="!selectedStudents.length" description="暂无学生选择该项目" />
-              <el-scrollbar v-else class="tp-scroll">
-                <ul style="list-style:none; padding:0; margin:0; font-size:12px; color:var(--app-text); padding-right:6px;">
-                  <li
-                    v-for="r in pagedSelectedStudents"
-                    :key="r.id"
-                    style="padding:6px 0; border-bottom:1px solid rgba(148,163,184,0.25);"
-                  >
-                    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-                      <span class="truncate" style="max-width:240px;">{{ r.student?.display_name || '学生' }}</span>
-                      <div class="stu-actions">
-                        <span class="pill" :class="statusClass(r)" style="font-size:11px;">
-                          {{ statusLabel(r) }}
-                        </span>
-                        <el-button
-                          v-if="r.teacher_status === 'pending' && r.final_status === 'pending'"
-                          size="small"
-                          type="primary"
-                          text
-                          @click="acceptStudent(r)"
-                        >
-                          同意
-                        </el-button>
-                      </div>
+            <el-scrollbar class="detail-scroll">
+              <div class="detail-content">
+                <div class="detail-top">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                    <div style="font-size:15px; font-weight:600;" class="truncate">{{ selectedPost.title }}</div>
+                    <el-button size="small" type="primary" text @click="openEdit(selectedPost)">编辑</el-button>
+                  </div>
+                  <div>
+                    类型：
+                    <span class="pill" :class="selectedPost.post_type === 'competition' ? 'badge-amber' : 'badge-blue'">
+                      {{ typeLabel(selectedPost.post_type) }}
+                    </span>
+                  </div>
+                  <div class="detail-line">简介：{{ selectedPost.content }}</div>
+                  <div>
+                    技术栈：
+                    <span v-if="!selectedPost.tech_stack?.length" style="color:var(--app-muted);">未设置</span>
+                  </div>
+                  <div v-if="selectedPost.tech_stack?.length" style="display:flex; flex-wrap:wrap; gap:4px;">
+                    <span v-for="t in selectedPost.tech_stack" :key="t" class="tag">{{ t }}</span>
+                    <span v-for="t in selectedPost.tags" :key="t" class="tag">{{ t }}</span>
+                  </div>
+                  <div>招募人数：{{ selectedPost.recruit_count || '未设置' }}</div>
+                  <div>项目周期：{{ selectedPost.duration || '未设置' }}</div>
+                  <div>预期成果与要求：{{ selectedPost.outcome || '未填写' }}</div>
+                  <div>联系方式：{{ selectedPost.contact || '未填写' }}</div>
+                  <div>
+                    报名截止时间：
+                    {{ selectedPost.deadline ? selectedPost.deadline.slice(0, 10) : '未设置' }}
+                  </div>
+                  <div v-if="selectedPost.detailed_info" class="detail-line">
+                    <div style="font-weight: 500; margin-bottom: 4px;">项目详细信息：</div>
+                    <div style="white-space: pre-wrap; word-break: break-word; color: var(--app-muted);">
+                      {{ selectedPost.detailed_info }}
                     </div>
-                  </li>
-                </ul>
-              </el-scrollbar>
+                  </div>
+                </div>
 
-              <div v-if="selectedStudents.length > selectedStudentsPageSize" style="text-align:right; margin-top: 8px; flex: 0 0 auto;">
-                <el-pagination
-                  background
-                  layout="prev, pager, next"
-                  :current-page="selectedStudentsPage"
-                  :page-size="selectedStudentsPageSize"
-                  :total="selectedStudents.length"
-                  @current-change="handleSelectedStudentsPageChange"
-                />
+                <el-divider style="margin: 12px 0;" />
+
+                <div class="students-section">
+                  <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom: 8px;">
+                    <div class="page-subtitle">选择该项目的学生</div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <div style="font-size: 12px; color: var(--app-muted);">共 {{ selectedStudents.length }} 条</div>
+                      <el-button 
+                        v-if="confirmedStudents.length > 0" 
+                        size="small" 
+                        type="primary" 
+                        text
+                        @click="exportStudentList"
+                      >
+                        导出名单
+                      </el-button>
+                    </div>
+                  </div>
+                  <el-empty v-if="!selectedStudents.length" description="暂无学生选择该项目" />
+                  <ul v-else style="list-style:none; padding:0; margin:0; font-size:12px; color:var(--app-text);">
+                    <li
+                      v-for="r in pagedSelectedStudents"
+                      :key="r.id"
+                      style="padding:8px 0; border-bottom:1px solid rgba(148,163,184,0.25);"
+                    >
+                      <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:8px;">
+                        <div style="flex: 1; min-width: 0;">
+                          <div style="font-weight: 500; margin-bottom: 4px;">{{ r.student?.display_name || '学生' }}</div>
+                          <div style="display: flex; flex-wrap: wrap; gap: 4px; align-items: center;">
+                            <span class="pill" :class="statusClass(r)" style="font-size:11px;">
+                              {{ statusLabel(r) }}
+                            </span>
+                            <span v-if="r.student_role" class="tag" style="font-size:11px;">
+                              角色：{{ r.student_role }}
+                            </span>
+                            <span v-if="r.custom_status" class="tag" style="font-size:11px;">
+                              状态：{{ r.custom_status }}
+                            </span>
+                          </div>
+                        </div>
+                        <div class="stu-actions" style="flex-shrink: 0;">
+                          <template v-if="r.teacher_status === 'pending' && r.final_status === 'pending'">
+                            <el-button
+                              size="small"
+                              type="primary"
+                              text
+                              :disabled="isRecruitFull"
+                              @click="acceptStudent(r)"
+                            >
+                              {{ isRecruitFull ? '已满员' : '同意' }}
+                            </el-button>
+                            <el-button
+                              size="small"
+                              type="danger"
+                              text
+                              @click="rejectStudent(r)"
+                            >
+                              拒绝
+                            </el-button>
+                          </template>
+                          <el-button 
+                            v-if="r.final_status === 'confirmed'" 
+                            size="small" 
+                            text
+                            type="danger"
+                            @click="cancelCooperation(r)"
+                          >
+                            取消合作
+                          </el-button>
+                        </div>
+                      </div>
+                    </li>
+                  </ul>
+
+                  <div v-if="selectedStudents.length > selectedStudentsPageSize" style="text-align:right; margin-top: 8px;">
+                    <el-pagination
+                      background
+                      layout="prev, pager, next"
+                      :current-page="selectedStudentsPage"
+                      :page-size="selectedStudentsPageSize"
+                      :total="selectedStudents.length"
+                      @current-change="handleSelectedStudentsPageChange"
+                    />
+                  </div>
+                </div>
               </div>
-            </div>
+            </el-scrollbar>
           </div>
         </el-card>
       </el-col>
@@ -206,6 +266,16 @@
             style="width: 100%;"
           />
         </el-form-item>
+        <el-form-item label="项目详细信息">
+          <el-input
+            v-model="form.detailed_info"
+            type="textarea"
+            :rows="6"
+            placeholder="详细描述项目背景、研究方向、技术要求、预期成果等（支持富文本格式）"
+            maxlength="10000"
+            show-word-limit
+          />
+        </el-form-item>
       </el-form>
       <template #footer>
         <div style="text-align:right;">
@@ -222,6 +292,14 @@
             <el-option label="科研项目" value="project" />
             <el-option label="大创项目" value="innovation" />
             <el-option label="学科竞赛" value="competition" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="项目状态">
+          <el-select v-model="editForm.project_status">
+            <el-option label="招募中" value="recruiting" />
+            <el-option label="进行中" value="in_progress" />
+            <el-option label="已完成" value="completed" />
+            <el-option label="已关闭" value="closed" />
           </el-select>
         </el-form-item>
         <el-form-item label="标题">
@@ -262,6 +340,16 @@
             style="width: 100%;"
           />
         </el-form-item>
+        <el-form-item label="项目详细信息">
+          <el-input
+            v-model="editForm.detailed_info"
+            type="textarea"
+            :rows="6"
+            placeholder="详细描述项目背景、研究方向、技术要求、预期成果等（支持富文本格式）"
+            maxlength="10000"
+            show-word-limit
+          />
+        </el-form-item>
       </el-form>
       <template #footer>
         <div style="text-align:right;">
@@ -274,12 +362,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { useRoute } from "vue-router";
 import axios from "axios";
+import { ElMessage, ElMessageBox } from "element-plus";
+
+const route = useRoute();
 
 
 const posts = ref<any[]>([]);
-const filters = reactive({ post_type: "" });
+const filters = reactive({ post_type: "", project_status: "" });
 const hint = ref(false);
 const createVisible = ref(false);
 const editVisible = ref(false);
@@ -307,12 +399,14 @@ const form = reactive({
   outcome: "",
   contact: "",
   deadline: "",
-  attachment_file_id: null as number | null
+  attachment_file_id: null as number | null,
+  detailed_info: ""
 });
 
 const editForm = reactive({
   id: 0,
   post_type: "project",
+  project_status: "recruiting",
   title: "",
   content: "",
   tech_stack: "",
@@ -322,7 +416,8 @@ const editForm = reactive({
   outcome: "",
   contact: "",
   deadline: "",
-  attachment_file_id: null as number | null
+  attachment_file_id: null as number | null,
+  detailed_info: ""
 });
 
 
@@ -338,11 +433,44 @@ const pagedSelectedStudents = computed(() => {
   return (selectedStudents.value || []).slice(start, start + selectedStudentsPageSize);
 });
 
+const confirmedStudents = computed(() => {
+  return (selectedStudents.value || []).filter((r: any) => r.final_status === "confirmed");
+});
+
+const isRecruitFull = computed(() => {
+  if (!selectedPost.value) return false;
+  const recruitCount = selectedPost.value.recruit_count || 0;
+  if (recruitCount <= 0) return false;
+  return confirmedStudents.value.length >= recruitCount;
+});
+
 
 function typeLabel(t: string) {
   if (t === "competition") return "学科竞赛";
   if (t === "innovation") return "大创项目";
   return "科研项目";
+}
+
+
+function projectStatusLabel(s: string) {
+  const map: Record<string, string> = {
+    "recruiting": "招募中",
+    "in_progress": "进行中",
+    "completed": "已完成",
+    "closed": "已关闭"
+  };
+  return map[s] || s;
+}
+
+
+function projectStatusClass(s: string) {
+  const map: Record<string, string> = {
+    "recruiting": "badge-blue",
+    "in_progress": "badge-green",
+    "completed": "badge-gray",
+    "closed": "badge-amber"
+  };
+  return map[s] || "badge-blue";
 }
 
 
@@ -389,7 +517,10 @@ async function onSelectEditAttachment(e: Event) {
 async function load() {
   const meResp = await axios.get("/api/auth/me");
   const resp = await axios.get("/api/teacher-posts", {
-    params: { post_type: filters.post_type || undefined }
+    params: { 
+      post_type: filters.post_type || undefined,
+      project_status: filters.project_status || undefined
+    }
   });
   posts.value = (resp.data.items || []).filter((x: any) => x.teacher && x.teacher.id === meResp.data.id);
   if (posts.value.length && !selectedId.value) {
@@ -430,6 +561,7 @@ async function publish() {
   form.contact = "";
   form.deadline = "";
   form.attachment_file_id = null;
+  form.detailed_info = "";
   await load();
 }
 
@@ -438,6 +570,7 @@ function openEdit(row: any) {
   editing.value = row;
   editForm.id = row.id;
   editForm.post_type = row.post_type;
+  editForm.project_status = row.project_status || "recruiting";
   editForm.title = row.title;
   editForm.content = row.content;
   editForm.tech_stack = (row.tech_stack || []).join(", ");
@@ -448,6 +581,7 @@ function openEdit(row: any) {
   editForm.contact = row.contact || "";
   editForm.deadline = row.deadline ? row.deadline.slice(0, 10) : "";
   editForm.attachment_file_id = row.attachment_file_id || null;
+  editForm.detailed_info = row.detailed_info || "";
   attachmentName.value = "";
   editAttachmentName.value = "";
   editVisible.value = true;
@@ -458,6 +592,7 @@ async function saveEdit() {
   if (!editForm.title || !editForm.content) return;
   await axios.put(`/api/teacher-posts/${editForm.id}`, {
     post_type: editForm.post_type,
+    project_status: editForm.project_status,
     title: editForm.title,
     content: editForm.content,
     tech_stack: editForm.tech_stack
@@ -473,7 +608,8 @@ async function saveEdit() {
     outcome: editForm.outcome,
     contact: editForm.contact,
     deadline: editForm.deadline || null,
-    attachment_file_id: editForm.attachment_file_id
+    attachment_file_id: editForm.attachment_file_id,
+    detailed_info: editForm.detailed_info
   });
   editVisible.value = false;
   await load();
@@ -550,14 +686,117 @@ function statusClass(r: any) {
 
 
 async function acceptStudent(r: any) {
-  await axios.post(`/api/cooperation/requests/${r.id}/respond`, { action: "accept" });
-  await loadRequestSummary();
-  await loadRequestsForSelected();
+  // 检查是否已满员
+  if (isRecruitFull.value) {
+    ElMessage.warning("该项目已达到招募人数上限");
+    return;
+  }
+  
+  try {
+    await axios.post(`/api/cooperation/requests/${r.id}/respond`, { action: "accept" });
+    await loadRequestSummary();
+    await loadRequestsForSelected();
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.message || "操作失败");
+  }
 }
 
 
-onMounted(() => {
-  load();
+async function rejectStudent(r: any) {
+  try {
+    await ElMessageBox.confirm(
+      `确定要拒绝 ${r.student?.display_name || '该学生'} 的申请吗？`,
+      "拒绝申请",
+      {
+        confirmButtonText: "确定",
+        cancelButtonText: "取消",
+        type: "warning"
+      }
+    );
+    
+    await axios.post(`/api/cooperation/requests/${r.id}/respond`, { action: "reject" });
+    ElMessage.success("已拒绝该申请");
+    await loadRequestSummary();
+    await loadRequestsForSelected();
+  } catch (err: any) {
+    // 用户取消操作或请求失败
+    if (err.response?.data?.message) {
+      ElMessage.error(err.response.data.message);
+    }
+  }
+}
+
+
+async function cancelCooperation(student: any) {
+  try {
+    await ElMessageBox.confirm(
+      `确定要取消与 ${student.student?.display_name || '该学生'} 的合作关系吗？取消后该学生将从项目中移除，双方可以重新发起申请。`,
+      "取消合作",
+      {
+        confirmButtonText: "确定取消",
+        cancelButtonText: "返回",
+        type: "warning"
+      }
+    );
+    
+    await axios.delete(`/api/cooperation/requests/${student.id}`);
+    
+    ElMessage.success("已取消合作关系");
+    await loadRequestSummary();
+    await loadRequestsForSelected();
+    // 重新加载项目列表以更新状态
+    await load();
+  } catch (err: any) {
+    // 用户取消操作或请求失败
+    if (err.response?.data?.message) {
+      ElMessage.error(err.response.data.message);
+    }
+  }
+}
+
+
+function exportStudentList() {
+  if (!confirmedStudents.value.length) return;
+  
+  // 导出学生名单为CSV
+  const csvContent = [
+    ["姓名", "角色", "状态", "申请时间"].join(","),
+    ...confirmedStudents.value.map((s: any) => [
+      s.student?.display_name || "未知",
+      s.student_role || "未设置",
+      s.custom_status || "未设置",
+      s.created_at ? new Date(s.created_at).toLocaleDateString() : ""
+    ].join(","))
+  ].join("\n");
+  
+  const blob = new Blob(["\ufeff" + csvContent], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  const url = URL.createObjectURL(blob);
+  link.setAttribute("href", url);
+  link.setAttribute("download", `${selectedPost.value?.title || "项目"}_学生名单.csv`);
+  link.style.visibility = "hidden";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  ElMessage.success("学生名单已导出");
+}
+
+
+onMounted(async () => {
+  await load();
+  
+  // 如果URL中有project_id参数，自动选中该项目
+  if (route.query.project_id) {
+    const projectId = Number(route.query.project_id);
+    if (!isNaN(projectId)) {
+      // 确保项目存在于列表中
+      const targetPost = posts.value.find((p: any) => p.id === projectId);
+      if (targetPost) {
+        selectPost(projectId);
+      }
+    }
+  }
 });
 </script>
 
@@ -606,8 +845,17 @@ onMounted(() => {
 .detail-body {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  height: 100%;
   min-height: 0;
+}
+
+.detail-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.detail-content {
+  padding: 0 4px;
 }
 
 .detail-top {
@@ -619,6 +867,10 @@ onMounted(() => {
 .detail-line {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.students-section {
+  margin-top: 0;
 }
 
 .students-wrap {

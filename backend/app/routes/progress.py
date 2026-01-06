@@ -23,6 +23,173 @@ def _ensure_member(user: User, r: CooperationRequest) -> bool:
     return user.id in {r.teacher_user_id, r.student_user_id} or user.role == Role.admin.value
 
 
+def _get_projects_by_post_id(post_id: int):
+    """获取某个post下所有已确认的合作项目"""
+    reqs = CooperationRequest.query.filter_by(
+        post_id=post_id,
+        final_status="confirmed"
+    ).all()
+    project_ids = []
+    for r in reqs:
+        p = CooperationProject.query.filter_by(request_id=r.id).first()
+        if p:
+            project_ids.append(p.id)
+    return project_ids
+
+
+@bp.get("/posts/<int:post_id>/milestones")
+@jwt_required()
+def list_milestones_by_post(post_id: int):
+    """按post_id获取所有相关项目的里程碑"""
+    user = User.query.get(int(get_jwt_identity()))
+    if not user or not user.is_active:
+        return jsonify({"message": "未登录"}), 401
+    
+    # 获取该post下所有项目的ID
+    project_ids = _get_projects_by_post_id(post_id)
+    if not project_ids:
+        return jsonify({"items": []})
+    
+    # 获取所有相关的里程碑
+    ms = Milestone.query.filter(Milestone.project_id.in_(project_ids)).order_by(Milestone.created_at.asc()).all()
+    now = now_utc()
+    return jsonify(
+        {
+            "items": [
+                {
+                    "id": m.id,
+                    "title": m.title,
+                    "due_date": m.due_date.isoformat() if m.due_date else None,
+                    "status": m.status,
+                    "is_near_due": bool(
+                        m.due_date
+                        and m.status != "done"
+                        and m.due_date >= now
+                        and m.due_date - now <= timedelta(days=3)
+                    ),
+                }
+                for m in ms
+            ]
+        }
+    )
+
+
+@bp.post("/posts/<int:post_id>/milestones")
+@jwt_required()
+def add_milestone_by_post(post_id: int):
+    """为post下的第一个项目添加里程碑"""
+    user = User.query.get(int(get_jwt_identity()))
+    if not user or not user.is_active:
+        return jsonify({"message": "未登录"}), 401
+    
+    # 获取该post下的第一个项目
+    project_ids = _get_projects_by_post_id(post_id)
+    if not project_ids:
+        return jsonify({"message": "无可用项目"}), 404
+    
+    project_id = project_ids[0]  # 使用第一个项目
+    data = request.get_json(force=True)
+    title = (data.get("title") or "").strip()
+    if not title:
+        return jsonify({"message": "参数不完整"}), 400
+    due_date = datetime.fromisoformat(data["due_date"]) if data.get("due_date") else None
+    m = Milestone(project_id=project_id, title=title, due_date=due_date, status=(data.get("status") or "todo"), created_at=now_utc())
+    db.session.add(m)
+    db.session.commit()
+    return jsonify({"id": m.id})
+
+
+@bp.put("/posts/<int:post_id>/milestones/<int:milestone_id>")
+@jwt_required()
+def update_milestone_by_post(post_id: int, milestone_id: int):
+    """更新里程碑"""
+    user = User.query.get(int(get_jwt_identity()))
+    if not user or not user.is_active:
+        return jsonify({"message": "未登录"}), 401
+    
+    m = Milestone.query.get(milestone_id)
+    if not m:
+        return jsonify({"message": "不存在"}), 404
+    
+    data = request.get_json(force=True)
+    if data.get("title") is not None:
+        m.title = (data.get("title") or "").strip()
+    if data.get("due_date") is not None:
+        m.due_date = datetime.fromisoformat(data["due_date"]) if data.get("due_date") else None
+    if data.get("status") is not None:
+        m.status = (data.get("status") or "todo").strip()
+    db.session.commit()
+    return jsonify({"ok": True})
+
+
+@bp.get("/posts/<int:post_id>/updates")
+@jwt_required()
+def list_updates_by_post(post_id: int):
+    """按post_id获取所有相关项目的进度更新"""
+    user = User.query.get(int(get_jwt_identity()))
+    if not user or not user.is_active:
+        return jsonify({"message": "未登录"}), 401
+    
+    # 获取该post下所有项目的ID
+    project_ids = _get_projects_by_post_id(post_id)
+    if not project_ids:
+        return jsonify({"items": []})
+    
+    # 获取所有相关的进度更新
+    ups = ProgressUpdate.query.filter(ProgressUpdate.project_id.in_(project_ids)).order_by(ProgressUpdate.created_at.desc()).limit(200).all()
+    
+    # 获取所有作者信息
+    author_ids = list(set(u.author_user_id for u in ups))
+    authors = {u.id: u for u in User.query.filter(User.id.in_(author_ids)).all()} if author_ids else {}
+    
+    return jsonify(
+        {
+            "items": [
+                {
+                    "id": u.id,
+                    "author_user_id": u.author_user_id,
+                    "author_name": authors[u.author_user_id].display_name if u.author_user_id in authors else "未知",
+                    "content": u.content,
+                    "attachment_file_id": u.attachment_file_id,
+                    "created_at": u.created_at.isoformat(),
+                }
+                for u in ups
+            ]
+        }
+    )
+
+
+@bp.post("/posts/<int:post_id>/updates")
+@jwt_required()
+def add_update_by_post(post_id: int):
+    """为post下的第一个项目添加进度更新"""
+    user = User.query.get(int(get_jwt_identity()))
+    if not user or not user.is_active:
+        return jsonify({"message": "未登录"}), 401
+    
+    # 获取该post下的第一个项目
+    project_ids = _get_projects_by_post_id(post_id)
+    if not project_ids:
+        return jsonify({"message": "无可用项目"}), 404
+    
+    project_id = project_ids[0]  # 使用第一个项目
+    data = request.get_json(force=True)
+    content = (data.get("content") or "").strip()
+    attachment_file_id = data.get("attachment_file_id")
+    if not content and not attachment_file_id:
+        return jsonify({"message": "参数不完整"}), 400
+    u = ProgressUpdate(
+        project_id=project_id,
+        author_user_id=user.id,
+        content=content,
+        attachment_file_id=int(attachment_file_id) if attachment_file_id else None,
+        created_at=now_utc(),
+    )
+    db.session.add(u)
+    db.session.commit()
+    return jsonify({"id": u.id})
+
+
 @bp.get("/projects/<int:project_id>/milestones")
 @jwt_required()
 def list_milestones(project_id: int):

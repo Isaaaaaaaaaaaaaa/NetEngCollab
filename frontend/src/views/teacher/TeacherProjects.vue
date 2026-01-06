@@ -19,11 +19,17 @@
               <li
                 v-for="p in projects"
                 :key="p.id"
-                style="padding:6px 8px; border-radius:8px; cursor:pointer;"
+                style="padding:8px; border-radius:8px; cursor:pointer; margin-bottom: 4px;"
                 :style="p.id === selectedId ? 'background:#eff4ff;' : 'background:transparent;'"
                 @click="select(p.id)"
               >
-                <span class="truncate" style="max-width:200px;">{{ p.title }}</span>
+                <div style="font-weight: 500; margin-bottom: 4px;" class="truncate">{{ p.title }}</div>
+                <div style="display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--app-muted);">
+                  <span class="pill" :class="p.project_status === 'in_progress' ? 'badge-green' : (p.project_status === 'completed' ? 'badge-gray' : 'badge-blue')" style="font-size: 10px;">
+                    {{ p.project_status === 'in_progress' ? '进行中' : (p.project_status === 'completed' ? '已完成' : '招募中') }}
+                  </span>
+                  <span>{{ p.student_count || 0 }} 名学生</span>
+                </div>
               </li>
             </ul>
           </el-scrollbar>
@@ -102,12 +108,15 @@
                 <li
                   v-for="u in updates"
                   :key="u.id"
-                  style="padding:6px 0; border-bottom:1px solid rgba(148,163,184,0.25);"
+                  style="padding:8px 0; border-bottom:1px solid rgba(148,163,184,0.25);"
                 >
-                  <div style="margin-bottom:2px; white-space: pre-wrap; word-break: break-word;">{{ u.content }}</div>
-                  <div style="font-size:10px; color:var(--app-muted);">
-                    {{ u.created_at?.slice(0, 16).replace('T', ' ') }}
+                  <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+                    <span class="pill badge-blue" style="font-size: 10px;">{{ u.author_name || '未知' }}</span>
+                    <span style="font-size:10px; color:var(--app-muted);">
+                      {{ u.created_at?.slice(0, 16).replace('T', ' ') }}
+                    </span>
                   </div>
+                  <div style="white-space: pre-wrap; word-break: break-word;">{{ u.content }}</div>
                 </li>
               </ul>
             </el-scrollbar>
@@ -162,8 +171,8 @@ async function loadProjects() {
 async function loadDetails() {
   if (!selectedId.value) return;
   const [msResp, upResp] = await Promise.all([
-    axios.get(`/api/projects/${selectedId.value}/milestones`),
-    axios.get(`/api/projects/${selectedId.value}/updates`)
+    axios.get(`/api/posts/${selectedId.value}/milestones`),
+    axios.get(`/api/posts/${selectedId.value}/updates`)
   ]);
   milestones.value = msResp.data.items;
   updates.value = upResp.data.items;
@@ -178,7 +187,7 @@ function select(id: number) {
 
 async function addMilestone() {
   if (!selectedId.value || !milestoneTitle.value) return;
-  await axios.post(`/api/projects/${selectedId.value}/milestones`, {
+  await axios.post(`/api/posts/${selectedId.value}/milestones`, {
     title: milestoneTitle.value,
     due_date: milestoneDueDate.value || null
   });
@@ -190,7 +199,7 @@ async function addMilestone() {
 
 async function markMilestoneDone(m: any) {
   if (!selectedId.value) return;
-  await axios.put(`/api/projects/${selectedId.value}/milestones/${m.id}`, {
+  await axios.put(`/api/posts/${selectedId.value}/milestones/${m.id}`, {
     status: "done"
   });
   await loadDetails();
@@ -199,7 +208,7 @@ async function markMilestoneDone(m: any) {
 
 async function addUpdate() {
   if (!selectedId.value || !updateContent.value) return;
-  await axios.post(`/api/projects/${selectedId.value}/updates`, { content: updateContent.value });
+  await axios.post(`/api/posts/${selectedId.value}/updates`, { content: updateContent.value });
   updateContent.value = "";
   await loadDetails();
 }

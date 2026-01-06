@@ -164,6 +164,52 @@ def _ensure_schema():
 
         ensure_column("must_change_password", "INTEGER", "TINYINT(1)")
 
+    def ensure_teacher_posts_detailed_info_and_status():
+        """添加 teacher_posts 表的 detailed_info 和 project_status 字段"""
+        table = "teacher_posts"
+
+        def ensure_column(col: str, sqlite_type: str, mysql_type: str, default_value: str = "NULL"):
+            if dialect == "sqlite":
+                if has_column_sqlite(table, col):
+                    return
+                if default_value != "NULL":
+                    _exec(f"ALTER TABLE {table} ADD COLUMN {col} {sqlite_type} DEFAULT {default_value}")
+                else:
+                    _exec(f"ALTER TABLE {table} ADD COLUMN {col} {sqlite_type}")
+                return
+
+            if dialect in {"mysql", "mariadb"}:
+                if has_column_mysql(table, col):
+                    return
+                if default_value != "NULL":
+                    _exec(f"ALTER TABLE {table} ADD COLUMN {col} {mysql_type} DEFAULT {default_value}")
+                else:
+                    _exec(f"ALTER TABLE {table} ADD COLUMN {col} {mysql_type} NULL")
+                return
+
+        ensure_column("detailed_info", "TEXT", "TEXT")
+        ensure_column("project_status", "VARCHAR(32)", "VARCHAR(32)", "'recruiting'")
+
+    def ensure_cooperation_requests_student_info():
+        """添加 cooperation_requests 表的 student_role 和 custom_status 字段"""
+        table = "cooperation_requests"
+
+        def ensure_column(col: str, sqlite_type: str, mysql_type: str):
+            if dialect == "sqlite":
+                if has_column_sqlite(table, col):
+                    return
+                _exec(f"ALTER TABLE {table} ADD COLUMN {col} {sqlite_type}")
+                return
+
+            if dialect in {"mysql", "mariadb"}:
+                if has_column_mysql(table, col):
+                    return
+                _exec(f"ALTER TABLE {table} ADD COLUMN {col} {mysql_type} NULL")
+                return
+
+        ensure_column("student_role", "VARCHAR(64)", "VARCHAR(64)")
+        ensure_column("custom_status", "VARCHAR(64)", "VARCHAR(64)")
+
     try:
         ensure_comments_parent_comment_id()
     except Exception:
@@ -191,5 +237,15 @@ def _ensure_schema():
 
     try:
         ensure_users_force_password_change()
+    except Exception:
+        pass
+
+    try:
+        ensure_teacher_posts_detailed_info_and_status()
+    except Exception:
+        pass
+
+    try:
+        ensure_cooperation_requests_student_info()
     except Exception:
         pass

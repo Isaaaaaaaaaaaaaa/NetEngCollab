@@ -58,7 +58,15 @@
             <el-table-column prop="title" label="项目" min-width="200">
               <template #default="scope">
                 <div style="display: flex; flex-direction: column; gap: 2px;">
-                  <span style="font-size: 13px; font-weight: 500;" class="truncate">{{ scope.row.title }}</span>
+                  <el-link
+                    type="primary"
+                    :underline="false"
+                    style="font-size: 13px; font-weight: 500;"
+                    class="truncate"
+                    @click="showProjectDetail(scope.row.id)"
+                  >
+                    {{ scope.row.title }}
+                  </el-link>
                   <span style="font-size: 11px; color: var(--app-muted);" class="truncate">{{ scope.row.content }}</span>
                 </div>
               </template>
@@ -107,29 +115,9 @@
                   type="primary"
                   :underline="false"
                   style="font-size:12px;"
-                  @click.stop="chat(scope.row)"
+                  @click.stop="showTeacherDetail(scope.row.teacher.id)"
                 >
-                  <el-tooltip placement="top">
-                    <template #content>
-                      <div style="max-width: 260px; font-size: 12px; line-height: 1.4;">
-                        <div v-if="scope.row.teacher.title || scope.row.teacher.organization" style="font-weight: 600;">
-                          {{ [scope.row.teacher.title, scope.row.teacher.organization].filter(Boolean).join(' · ') }}
-                        </div>
-                        <div v-if="scope.row.teacher.stats" style="margin-top: 4px;">
-                          <span v-if="scope.row.teacher.stats.success_rate != null">
-                            组队成功率：{{ Math.round(scope.row.teacher.stats.success_rate * 100) }}%
-                          </span>
-                          <span v-else>组队成功率：暂无</span>
-                          <span style="margin-left: 8px;">往期合作：{{ scope.row.teacher.stats.confirmed_projects ?? 0 }} 个</span>
-                        </div>
-                        <div v-if="scope.row.teacher.recent_achievements?.length" style="margin-top: 4px; color: var(--app-muted);">
-                          往期指导：{{ scope.row.teacher.recent_achievements.join('、') }}
-                        </div>
-                        <div style="margin-top: 4px; color: var(--app-muted);">点击教师姓名可发起私信沟通</div>
-                      </div>
-                    </template>
-                    <span>{{ scope.row.teacher.display_name }}</span>
-                  </el-tooltip>
+                  <span>{{ scope.row.teacher.display_name }}</span>
                 </el-link>
                 <span v-else style="font-size: 12px;">-</span>
               </template>
@@ -159,15 +147,22 @@
             </el-table-column>
             <el-table-column label="操作" min-width="120" align="right" fixed="right">
               <template #default="scope">
-                <el-button
-                  size="small"
-                  type="primary"
-                  text
-                  :disabled="!!requestStatus[scope.row.id]"
-                  @click="apply(scope.row)"
-                >
-                  申请加入
-                </el-button>
+                <template v-if="canApply(scope.row)">
+                  <el-button
+                    size="small"
+                    type="primary"
+                    text
+                    :disabled="!!requestStatus[scope.row.id]"
+                    @click="apply(scope.row)"
+                  >
+                    申请加入
+                  </el-button>
+                </template>
+                <template v-else>
+                  <span style="font-size: 11px; color: var(--app-muted);">
+                    {{ getUnavailableReason(scope.row) }}
+                  </span>
+                </template>
               </template>
             </el-table-column>
           </el-table>
@@ -194,8 +189,9 @@
               <li
                 v-for="(p, idx) in matched.slice(0, 10)"
                 :key="p.id"
-                class="top10-item"
+                class="top10-item clickable"
                 :class="idx === Math.min(matched.length, 10) - 1 ? 'is-last' : ''"
+                @click="showProjectDetail(p.id)"
               >
                 <span class="truncate" style="max-width: 180px; color: var(--app-text);">
                   {{ p.title }}
@@ -208,6 +204,22 @@
         </div>
       </el-col>
     </el-row>
+    
+    <!-- 教师详情弹窗 -->
+    <TeacherDetailModal
+      v-model:visible="teacherModalVisible"
+      :teacher-id="selectedTeacherId"
+      @send-message="handleSendMessageToTeacher"
+    />
+    
+    <!-- 项目详情弹窗 -->
+    <ProjectDetailModal
+      v-model:visible="projectModalVisible"
+      :project-id="selectedProjectId"
+      :show-apply-button="true"
+      :request-status="selectedProjectId ? requestStatus[selectedProjectId] : null"
+      @apply="handleApplyFromModal"
+    />
   </div>
 </template>
 
@@ -217,6 +229,8 @@ import { useRouter } from "vue-router";
 import axios from "axios";
 import { ElMessage } from "element-plus";
 import InteractionsPanel from "../../components/InteractionsPanel.vue";
+import TeacherDetailModal from "../../components/TeacherDetailModal.vue";
+import ProjectDetailModal from "../../components/ProjectDetailModal.vue";
 
 
 const posts = ref<any[]>([]);
@@ -229,6 +243,12 @@ const page = ref(1);
 const pageSize = ref(5);
 const total = ref(0);
 const teacherOptions = ref<any[]>([]);
+
+// 弹窗相关状态
+const teacherModalVisible = ref(false);
+const selectedTeacherId = ref<number | null>(null);
+const projectModalVisible = ref(false);
+const selectedProjectId = ref<number | null>(null);
 
 
 function typeLabel(t: string) {
@@ -263,7 +283,20 @@ async function loadPosts() {
       page_size: pageSize.value
     }
   });
-  posts.value = resp.data.items;
+  
+  // 获取项目列表
+  let items = resp.data.items || [];
+  
+  // 排序：可申请的项目在前，不可申请的在后
+  items.sort((a: any, b: any) => {
+    const aCanApply = canApplyProject(a);
+    const bCanApply = canApplyProject(b);
+    if (aCanApply && !bCanApply) return -1;
+    if (!aCanApply && bCanApply) return 1;
+    return 0;
+  });
+  
+  posts.value = items;
   total.value = resp.data.total || 0;
   const map = new Map<number, any>();
   (teacherOptions.value || []).forEach((t: any) => {
@@ -332,6 +365,60 @@ function statusClass(r: any) {
 }
 
 
+// 检查项目是否可以申请（用于排序）
+function canApplyProject(p: any): boolean {
+  // 已经申请过的不能再申请
+  if (requestStatus[p.id]) return false;
+  
+  // 检查是否已满员
+  if (p.confirmed_count !== undefined && p.recruit_count) {
+    if (p.confirmed_count >= p.recruit_count) return false;
+  }
+  
+  // 检查项目状态
+  if (p.project_status && p.project_status !== "recruiting") return false;
+  
+  // 检查截止时间
+  if (p.deadline) {
+    const deadline = new Date(p.deadline);
+    if (deadline < new Date()) return false;
+  }
+  
+  return true;
+}
+
+
+// 检查是否可以申请（用于按钮显示）
+function canApply(p: any): boolean {
+  // 已经申请过的显示状态，不显示不可申请
+  if (requestStatus[p.id]) return true;
+  
+  return canApplyProject(p);
+}
+
+
+// 获取不可申请的原因
+function getUnavailableReason(p: any): string {
+  // 检查是否已满员
+  if (p.confirmed_count !== undefined && p.recruit_count) {
+    if (p.confirmed_count >= p.recruit_count) return "已满员";
+  }
+  
+  // 检查项目状态
+  if (p.project_status === "in_progress") return "进行中";
+  if (p.project_status === "completed") return "已完成";
+  if (p.project_status === "closed") return "已关闭";
+  
+  // 检查截止时间
+  if (p.deadline) {
+    const deadline = new Date(p.deadline);
+    if (deadline < new Date()) return "已截止";
+  }
+  
+  return "不可申请";
+}
+
+
 async function apply(p: any) {
   const respMe = await axios.get("/api/auth/me");
   const studentId = respMe.data.id;
@@ -367,6 +454,52 @@ async function chat(p: any) {
     content: `老师您好，我对您的项目“${p.title}”很感兴趣，想进一步了解。`
   });
   router.push({ name: "student-messages" });
+}
+
+// 显示教师详情弹窗
+function showTeacherDetail(teacherId: number) {
+  selectedTeacherId.value = teacherId;
+  teacherModalVisible.value = true;
+}
+
+// 显示项目详情弹窗
+function showProjectDetail(projectId: number) {
+  selectedProjectId.value = projectId;
+  projectModalVisible.value = true;
+}
+
+// 从项目详情弹窗申请加入
+async function handleApplyFromModal(projectId: number) {
+  try {
+    const respMe = await axios.get("/api/auth/me");
+    const studentId = respMe.data.id;
+    await axios.post("/api/cooperation/request", {
+      post_id: projectId,
+      student_user_id: studentId
+    });
+    await loadMyRequests();
+    projectModalVisible.value = false;
+    ElMessage.success("已提交合作申请，等待教师确认");
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.message || "申请失败，请重试");
+  }
+}
+
+// 从教师详情弹窗发送私信
+async function handleSendMessageToTeacher(teacherId: number) {
+  try {
+    const meResp = await axios.get("/api/auth/me");
+    const me = meResp.data;
+    await axios.post("/api/messages/send", {
+      teacher_user_id: teacherId,
+      student_user_id: me.id,
+      content: `老师您好，我想进一步了解您的项目。`
+    });
+    router.push({ name: "student-messages" });
+  } catch (error) {
+    console.error('发送私信失败:', error);
+    ElMessage.error('发送失败，请重试');
+  }
 }
 
 
@@ -525,6 +658,18 @@ watch(
   font-size: 12px;
   padding: 0 0;
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.top10-item.clickable {
+  cursor: pointer;
+  padding: 4px 8px;
+  margin: 0 -8px;
+  border-radius: 6px;
+  transition: background-color 0.2s;
+}
+
+.top10-item.clickable:hover {
+  background-color: #f5f7fa;
 }
 
 .top10-item.is-last {

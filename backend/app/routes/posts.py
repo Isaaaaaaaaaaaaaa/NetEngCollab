@@ -67,6 +67,7 @@ def list_teacher_posts():
         page_size = 20
 
     post_type = request.args.get("post_type")
+    project_status = request.args.get("project_status")  # 新增：项目状态筛选
     teacher_user_id = request.args.get("teacher_user_id")
     keyword = (request.args.get("keyword") or "").strip()
     tag = (request.args.get("tag") or "").strip()
@@ -74,6 +75,8 @@ def list_teacher_posts():
 
     if post_type:
         q = q.filter_by(post_type=post_type)
+    if project_status:  # 新增：按项目状态筛选
+        q = q.filter_by(project_status=project_status)
     if teacher_user_id and str(teacher_user_id).isdigit():
         q = q.filter_by(teacher_user_id=int(teacher_user_id))
     if keyword:
@@ -136,6 +139,13 @@ def list_teacher_posts():
         if "核心期刊" in tags_text:
             return "核心期刊"
         return "普通"
+
+    def get_confirmed_count(post_id: int) -> int:
+        """获取项目已确认的学生数量"""
+        return CooperationRequest.query.filter_by(
+            post_id=post_id,
+            final_status=CooperationStatus.confirmed.value
+        ).count()
 
     def success_rate_for_teacher(teacher_id: int):
         confirmed = CooperationRequest.query.filter_by(
@@ -216,15 +226,18 @@ def list_teacher_posts():
                 "project_level": project_level_from_tags(tags),
                 "title": p.title,
                 "content": p.content,
+                "detailed_info": p.detailed_info,  # 新增：详细信息字段
                 "tech_stack": techs,
                 "tags": tags,
                 "recruit_count": p.recruit_count,
+                "confirmed_count": get_confirmed_count(p.id),  # 新增：已确认学生数量
                 "duration": p.duration,
                 "outcome": p.outcome,
                 "contact": p.contact,
                 "deadline": p.deadline.isoformat() if p.deadline else None,
                 "attachment_file_id": p.attachment_file_id,
                 "teacher": tinfo,
+                "project_status": p.project_status,  # 新增：项目状态
                 "created_at": p.created_at.isoformat(),
                 "updated_at": p.updated_at.isoformat(),
             }
@@ -251,11 +264,17 @@ def create_teacher_post():
     if not title or not content:
         return jsonify({"message": "标题/内容不能为空"}), 400
 
+    # 验证 detailed_info 字段长度（最大10000字符）
+    detailed_info = data.get("detailed_info") or ""
+    if len(detailed_info) > 10000:
+        return jsonify({"message": "详细信息不能超过10000字符"}), 400
+
     post = TeacherPost(
         teacher_user_id=user.id,
         post_type=post_type,
         title=title,
         content=content,
+        detailed_info=detailed_info,  # 新增：详细信息字段
         tech_stack_json=json_dumps(ensure_list_str(data.get("tech_stack"))),
         tags_json=json_dumps(ensure_list_str(data.get("tags"))),
         recruit_count=data.get("recruit_count"),
@@ -291,6 +310,19 @@ def update_teacher_post(post_id: int):
     if not title or not content:
         return jsonify({"message": "标题/内容不能为空"}), 400
 
+    # 验证 detailed_info 字段长度（最大10000字符）
+    if "detailed_info" in data:
+        detailed_info = data.get("detailed_info") or ""
+        if len(detailed_info) > 10000:
+            return jsonify({"message": "详细信息不能超过10000字符"}), 400
+        post.detailed_info = detailed_info
+
+    # 更新项目状态
+    if "project_status" in data:
+        project_status = (data.get("project_status") or "").strip()
+        if project_status in ("recruiting", "in_progress", "completed", "closed"):
+            post.project_status = project_status
+
     post.title = title
     post.content = content
     if "post_type" in data and (data.get("post_type") or "").strip():
@@ -325,16 +357,45 @@ def list_students():
     grade = (request.args.get("grade") or "").strip()
     skill = (request.args.get("skill") or "").strip()
     keyword = (request.args.get("keyword") or "").strip()
+    project_id = request.args.get("project_id")  # 新增：项目筛选参数
 
-    rows = (
-        db.session.query(User, StudentProfile)
-        .outerjoin(StudentProfile, StudentProfile.user_id == User.id)
-        .filter(User.is_active == True)
-        .filter(User.role == Role.student.value)
-        .order_by(User.id.asc())
-        .limit(2000)
-        .all()
-    )
+    # 如果指定了 project_id，筛选已申请或匹配该项目的学生
+    if project_id and str(project_id).isdigit():
+        project_id = int(project_id)
+        # 查询该项目的所有合作请求
+        cooperation_requests = CooperationRequest.query.filter_by(post_id=project_id).all()
+        student_ids = [req.student_user_id for req in cooperation_requests if req.student_user_id]
+        
+        if not student_ids:
+            # 如果该项目没有任何申请，返回空列表
+            return jsonify({"items": []})
+        
+        # 只查询申请了该项目的学生
+        rows = (
+            db.session.query(User, StudentProfile)
+            .outerjoin(StudentProfile, StudentProfile.user_id == User.id)
+            .filter(User.is_active == True)
+            .filter(User.role == Role.student.value)
+            .filter(User.id.in_(student_ids))
+            .order_by(User.id.asc())
+            .limit(2000)
+            .all()
+        )
+        
+        # 构建学生ID到合作请求的映射，用于后续排序
+        student_to_request = {req.student_user_id: req for req in cooperation_requests if req.student_user_id}
+    else:
+        # 没有指定项目，查询所有学生
+        rows = (
+            db.session.query(User, StudentProfile)
+            .outerjoin(StudentProfile, StudentProfile.user_id == User.id)
+            .filter(User.is_active == True)
+            .filter(User.role == Role.student.value)
+            .order_by(User.id.asc())
+            .limit(2000)
+            .all()
+        )
+        student_to_request = {}
     items = []
     for user, p in rows:
         visibility = p.visibility if p else Visibility.public.value
@@ -434,6 +495,15 @@ def list_students():
                 "updated_at": p.updated_at.isoformat() if p and p.updated_at else None,
             }
         )
+    
+    # 如果指定了项目，按匹配分数和申请时间排序
+    if project_id and student_to_request:
+        # 按匹配分数降序，然后按申请时间升序（早申请的在前）
+        items.sort(key=lambda x: (
+            -x["skill_score"],  # 匹配分数降序
+            student_to_request.get(x["user"]["id"]).created_at if student_to_request.get(x["user"]["id"]) else datetime.max
+        ))
+    
     return jsonify({"items": items})
 
 
@@ -852,3 +922,77 @@ def list_reactions():
         reaction_type=reaction_type,
     ).order_by(Reaction.created_at.desc()).all()
     return jsonify({"items": [{"target_id": r.target_id} for r in rows]})
+
+
+@bp.get("/teachers/<int:teacher_id>/profile")
+@jwt_required(optional=True)
+def get_teacher_profile(teacher_id):
+    """
+    获取教师完整信息
+    Requirements: 1.1, 1.2
+    """
+    # 获取教师用户信息
+    teacher = User.query.filter_by(id=teacher_id, role=Role.teacher.value).first()
+    if not teacher:
+        return jsonify({"message": "教师不存在"}), 404
+    
+    # 获取教师画像
+    profile = TeacherProfile.query.filter_by(user_id=teacher_id).first()
+    
+    # 解析研究标签
+    research_tags = []
+    if profile and profile.research_tags_json:
+        research_tags = json_loads(profile.research_tags_json, [])
+    
+    # 统计教师的项目数据
+    total_projects = TeacherPost.query.filter_by(teacher_user_id=teacher_id).count()
+    
+    # 统计已确认的合作项目数
+    confirmed_projects = (
+        db.session.query(CooperationRequest)
+        .filter(
+            CooperationRequest.teacher_user_id == teacher_id,
+            CooperationRequest.final_status == CooperationStatus.confirmed.value
+        )
+        .count()
+    )
+    
+    # 计算组队成功率
+    total_requests = (
+        db.session.query(CooperationRequest)
+        .filter(CooperationRequest.teacher_user_id == teacher_id)
+        .count()
+    )
+    success_rate = confirmed_projects / total_requests if total_requests > 0 else None
+    
+    # 获取最近的成就（从最近的项目中提取）
+    recent_achievements = []
+    recent_posts = (
+        TeacherPost.query
+        .filter_by(teacher_user_id=teacher_id)
+        .order_by(TeacherPost.created_at.desc())
+        .limit(3)
+        .all()
+    )
+    for post in recent_posts:
+        if post.outcome:
+            recent_achievements.append(post.outcome)
+    
+    return jsonify({
+        "id": teacher.id,
+        "display_name": teacher.display_name,
+        "username": teacher.username,
+        "email": teacher.email,
+        "phone": teacher.phone,
+        "title": profile.title if profile else None,
+        "organization": profile.organization if profile else None,
+        "bio": profile.bio if profile else None,
+        "research_tags": research_tags,
+        "auto_reply": profile.auto_reply if profile else None,
+        "stats": {
+            "total_projects": total_projects,
+            "confirmed_projects": confirmed_projects,
+            "success_rate": success_rate
+        },
+        "recent_achievements": recent_achievements
+    })
